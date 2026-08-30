@@ -54,7 +54,7 @@ if FileSystemEventHandler is not None:
 class MetatubeJav(_PluginBase):
     plugin_name = "Metatube JAV"
     plugin_desc = "使用局域网 Metatube 服务刮削 JAV 元数据并参与文件整理。"
-    plugin_version = "1.6.2"
+    plugin_version = "1.7.0"
     plugin_author = "7kyun"
     plugin_config_prefix = "metatubejav_"
     auth_level = 1
@@ -66,6 +66,7 @@ class MetatubeJav(_PluginBase):
         self._observers = []
         self._monitor_targets = {}
         self._api_lock = threading.Semaphore(1)
+        self._task_lock = threading.Lock()
         self._exclude_keywords = ""
         self._transfer_type = "move"
         self._interval = 10
@@ -169,11 +170,19 @@ class MetatubeJav(_PluginBase):
         logger.info("Metatube JAV 全量递归扫描完成，共发现 %d 个视频文件", len(files))
         for index, (path, source_dir) in enumerate(files, 1):
             logger.info("Metatube JAV 全量处理第 %d/%d 个视频：%s", index, len(files), path)
-            self._handle_monitored_file(str(path), source_dir)
+            try:
+                self._handle_monitored_file(str(path), source_dir)
+            except Exception:
+                logger.exception("Metatube JAV 全量处理单个文件异常，继续下一个：%s", path)
+            logger.info("Metatube JAV 全量处理完成第 %d/%d 个视频：%s", index, len(files), path)
             if self._request_interval and index < len(files):
                 time.sleep(self._request_interval)
 
     def _handle_monitored_file(self, path: str, source_dir: str) -> None:
+        with self._task_lock:
+            self._process_monitored_file(path, source_dir)
+
+    def _process_monitored_file(self, path: str, source_dir: str) -> None:
         file_path = Path(path)
         if file_path.suffix.lower() not in VIDEO_EXTENSIONS:
             return
