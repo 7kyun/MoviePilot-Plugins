@@ -54,7 +54,7 @@ if FileSystemEventHandler is not None:
 class MetatubeJav(_PluginBase):
     plugin_name = "Metatube JAV"
     plugin_desc = "使用局域网 Metatube 服务刮削 JAV 元数据并参与文件整理。"
-    plugin_version = "1.7.2"
+    plugin_version = "1.7.3"
     plugin_author = "7kyun"
     plugin_config_prefix = "metatubejav_"
     auth_level = 1
@@ -199,9 +199,19 @@ class MetatubeJav(_PluginBase):
         if not target:
             return
         try:
-            with self._api_lock:
+            logger.info("Metatube JAV 等待详情请求锁：%s", code)
+            if not self._api_lock.acquire(timeout=60):
+                logger.error("Metatube JAV 等待详情请求锁超时，跳过：%s", code)
+                return
+            try:
+                logger.info("Metatube JAV 开始请求详情：%s", code)
                 meta = self._client.detail(code)
+            finally:
+                self._api_lock.release()
+            logger.info("Metatube JAV 详情请求完成：%s，标题=%s", code, meta.title)
+            logger.info("Metatube JAV 开始整理文件：%s", file_path)
             result = organize_file(file_path, target, meta, transfer_type=transfer_type, rename=str(rename).lower() != "false", overwrite=overwrite)
+            logger.info("Metatube JAV 文件整理函数返回：%s", result.destination)
             if not result.moved:
                 logger.info("Metatube JAV 目标已存在，按覆盖模式跳过：%s", result.destination)
                 file_path.unlink(missing_ok=True)
