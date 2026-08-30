@@ -21,7 +21,7 @@ PLUGIN_MEDIA_SOURCE = "metatube-jav"
 class MetatubeJav(_PluginBase):
     plugin_name = "Metatube JAV"
     plugin_desc = "使用局域网 Metatube 服务刮削 JAV 元数据并参与文件整理。"
-    plugin_version = "1.0.1"
+    plugin_version = "1.0.2"
     plugin_author = "7kyun"
     plugin_config_prefix = "metatubejav_"
     auth_level = 1
@@ -69,7 +69,8 @@ class MetatubeJav(_PluginBase):
         return {"search_medias": self.search_medias, "recognize_media": self.recognize_media} if self.get_state() else {}
 
     def _media_info(self, item):
-        fields = {"type": "电影", "title": item.title, "year": item.year, "title_year": f"{item.title} ({item.year})" if item.year else item.title, "media_source": PLUGIN_MEDIA_SOURCE, "media_id": f"{item.provider}:{item.id}" if item.provider else item.id, "poster_path": item.poster, "overview": item.overview, "runtime": item.runtime, "vote_average": item.rating, "release_date": item.release_date}
+        year = str(item.year) if item.year is not None else None
+        fields = {"type": "电影", "title": item.title, "year": year, "title_year": f"{item.title} ({year})" if year else item.title, "media_source": PLUGIN_MEDIA_SOURCE, "media_id": f"{item.provider}:{item.id}" if item.provider else item.id, "poster_path": item.poster, "overview": item.overview, "runtime": item.runtime, "vote_average": item.rating, "release_date": item.release_date}
         return schemas.MediaInfo(**fields) if schemas is not None and hasattr(schemas, "MediaInfo") else fields
 
     def search_medias(self, meta: Any, media_source: Any = None, **_: Any):
