@@ -53,7 +53,7 @@ if FileSystemEventHandler is not None:
 class MetatubeJav(_PluginBase):
     plugin_name = "Metatube JAV"
     plugin_desc = "使用局域网 Metatube 服务刮削 JAV 元数据并参与文件整理。"
-    plugin_version = "1.3.0"
+    plugin_version = "1.3.1"
     plugin_author = "7kyun"
     plugin_config_prefix = "metatubejav_"
     auth_level = 1
@@ -68,6 +68,7 @@ class MetatubeJav(_PluginBase):
         self._exclude_keywords = ""
         self._transfer_type = "move"
         self._interval = 10
+        self._notify = False
 
     def init_plugin(self, config: dict = None):
         self.stop_service()
@@ -75,6 +76,7 @@ class MetatubeJav(_PluginBase):
         self._enabled = bool(config.get("enabled", True))
         onlyonce = bool(config.get("onlyonce", False))
         self._exclude_keywords = str(config.get("exclude_keywords") or "")
+        self._notify = bool(config.get("notify", False))
         self._transfer_type = str(config.get("transfer_type") or "move")
         self._interval = max(1, int(config.get("interval") or 10))
         url = config.get("url") or os.getenv("METATUBE_URL", "http://metatube:8080")
@@ -102,7 +104,11 @@ class MetatubeJav(_PluginBase):
         self._observers = []
         for line in monitor_confs.splitlines():
             parts = [item.strip() for item in line.split("#")]
-            if len(parts) == 4:
+            if len(parts) == 4 and parts[0] in ("fast", "compatibility"):
+                mode, source, target, rename = parts
+            elif len(parts) == 4 and parts[2] in ("move", "copy", "link", "softlink"):
+                mode, source, target, rename = "fast", parts[0], parts[1], parts[3]
+            elif len(parts) == 4:
                 mode, source, target, rename = "fast", *parts
             elif len(parts) == 5:
                 mode, source, target, rename = parts[0], parts[1], parts[2], parts[3]
@@ -182,13 +188,14 @@ class MetatubeJav(_PluginBase):
         return ([
             {"component": "VSwitch", "props": {"model": "enabled", "label": "启用 Metatube JAV"}},
             {"component": "VSwitch", "props": {"model": "onlyonce", "label": "立即运行一次"}},
+            {"component": "VSwitch", "props": {"model": "notify", "label": "发送通知"}},
+            {"component": "VSelect", "props": {"model": "transfer_type", "label": "转移方式", "items": [{"title": "移动", "value": "move"}, {"title": "复制", "value": "copy"}, {"title": "硬链接", "value": "link"}, {"title": "软链接", "value": "softlink"}]}},
             {"component": "VTextField", "props": {"model": "url", "label": "Metatube URL"}},
             {"component": "VTextField", "props": {"model": "token", "label": "API Token", "type": "password"}},
-            {"component": "VSelect", "props": {"model": "transfer_type", "label": "转移方式", "items": [{"title": "移动", "value": "move"}, {"title": "复制", "value": "copy"}, {"title": "硬链接", "value": "link"}, {"title": "软链接", "value": "softlink"}]}},
             {"component": "VTextField", "props": {"model": "interval", "label": "兼容模式轮询间隔（秒）", "placeholder": "10"}},
             {"component": "VTextarea", "props": {"model": "monitor_confs", "label": "监控目录", "rows": 5, "placeholder": "监控方式#监控目录#目标目录#是否重命名"}},
             {"component": "VTextarea", "props": {"model": "exclude_keywords", "label": "排除关键词", "rows": 2, "placeholder": "每行一个关键词"}},
-        ], {"enabled": False, "onlyonce": False, "url": "", "token": "", "timeout": 10, "transfer_type": "move", "interval": 10, "monitor_confs": "", "exclude_keywords": ""})
+        ], {"enabled": False, "onlyonce": False, "notify": False, "url": "", "token": "", "timeout": 10, "transfer_type": "move", "interval": 10, "monitor_confs": "", "exclude_keywords": ""})
 
     def get_media_source(self):
         try:
