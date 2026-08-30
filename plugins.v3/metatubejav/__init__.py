@@ -9,9 +9,11 @@ from typing import Any
 try:
     from watchdog.events import FileSystemEventHandler
     from watchdog.observers import Observer
+    from watchdog.observers.polling import PollingObserver
 except ImportError:
     FileSystemEventHandler = None
     Observer = None
+    PollingObserver = None
 
 try:
     from app import schemas
@@ -51,7 +53,7 @@ if FileSystemEventHandler is not None:
 class MetatubeJav(_PluginBase):
     plugin_name = "Metatube JAV"
     plugin_desc = "使用局域网 Metatube 服务刮削 JAV 元数据并参与文件整理。"
-    plugin_version = "1.1.1"
+    plugin_version = "1.3.0"
     plugin_author = "7kyun"
     plugin_config_prefix = "metatubejav_"
     auth_level = 1
@@ -63,11 +65,18 @@ class MetatubeJav(_PluginBase):
         self._observers = []
         self._monitor_targets = {}
         self._api_lock = threading.Semaphore(1)
+        self._exclude_keywords = ""
+        self._transfer_type = "move"
+        self._interval = 10
 
     def init_plugin(self, config: dict = None):
         self.stop_service()
         config = config or {}
         self._enabled = bool(config.get("enabled", True))
+        onlyonce = bool(config.get("onlyonce", False))
+        self._exclude_keywords = str(config.get("exclude_keywords") or "")
+        self._transfer_type = str(config.get("transfer_type") or "move")
+        self._interval = max(1, int(config.get("interval") or 10))
         url = config.get("url") or os.getenv("METATUBE_URL", "http://metatube:8080")
         token = config.get("token") or os.getenv("METATUBE_TOKEN") or None
         self._client = MetatubeClient(
@@ -78,6 +87,11 @@ class MetatubeJav(_PluginBase):
         logger.info("Metatube JAV 插件已%s，服务地址：%s", "启用" if self._enabled else "禁用", url)
         if self._enabled:
             self._start_monitors(str(config.get("monitor_confs") or os.getenv("METATUBE_MONITOR_CONFS", "")))
+            if onlyonce:
+                logger.info("Metatube JAV 监控服务启动，立即执行一次全量扫描")
+                for source in self._monitor_targets:
+                    threading.Thread(target=self._scan_monitor, args=(source,), daemon=True).start()
+                self.update_config({**config, "onlyonce": False})
 
     def _start_monitors(self, monitor_confs: str) -> None:
         if not monitor_confs:
@@ -88,24 +102,40 @@ class MetatubeJav(_PluginBase):
         self._observers = []
         for line in monitor_confs.splitlines():
             parts = [item.strip() for item in line.split("#")]
-            if len(parts) != 4:
+            if len(parts) == 4:
+                mode, source, target, rename = "fast", *parts
+            elif len(parts) == 5:
+                mode, source, target, rename = parts[0], parts[1], parts[2], parts[3]
+            else:
                 logger.error("Metatube JAV 监控配置格式错误：%s", line)
                 continue
-            source, target, transfer_type, rename = parts
             if not Path(source).is_dir():
                 logger.warning("Metatube JAV 监控目录不存在：%s", source)
                 continue
-            observer = Observer()
+            observer = PollingObserver(timeout=self._interval) if mode == "compatibility" and PollingObserver else Observer()
             observer.schedule(_MonitorHandler(self, source), source, recursive=True)
             observer.daemon = True
             observer.start()
             self._observers.append(observer)
-            logger.info("Metatube JAV 目录监控已启动：%s -> %s（%s，重命名=%s）", source, target, transfer_type, rename)
-            self._monitor_targets[source] = (target, transfer_type, rename)
+            logger.info("Metatube JAV 目录监控已启动：%s -> %s（模式=%s，转移=%s，重命名=%s）", source, target, mode, self._transfer_type, rename)
+            self._monitor_targets[source] = (target, self._transfer_type, rename)
+
+    def _scan_monitor(self, source_dir: str) -> None:
+        logger.info("Metatube JAV 开始扫描监控目录：%s", source_dir)
+        count = 0
+        for path in Path(source_dir).rglob("*"):
+            if path.is_file():
+                count += 1
+                self._handle_monitored_file(str(path), source_dir)
+        logger.info("Metatube JAV 监控目录扫描完成：%s，共检查 %d 个文件", source_dir, count)
 
     def _handle_monitored_file(self, path: str, source_dir: str) -> None:
         file_path = Path(path)
         if file_path.suffix.lower() not in VIDEO_EXTENSIONS:
+            return
+        keywords = [item.strip().lower() for item in self._exclude_keywords.splitlines() if item.strip()]
+        if any(keyword in file_path.name.lower() for keyword in keywords):
+            logger.info("Metatube JAV 监控命中过滤关键词，跳过：%s", path)
             return
         code = normalize_code(file_path.stem)
         if not code:
@@ -151,11 +181,14 @@ class MetatubeJav(_PluginBase):
     def get_form(self):
         return ([
             {"component": "VSwitch", "props": {"model": "enabled", "label": "启用 Metatube JAV"}},
+            {"component": "VSwitch", "props": {"model": "onlyonce", "label": "立即运行一次"}},
             {"component": "VTextField", "props": {"model": "url", "label": "Metatube URL"}},
             {"component": "VTextField", "props": {"model": "token", "label": "API Token", "type": "password"}},
             {"component": "VSelect", "props": {"model": "transfer_type", "label": "转移方式", "items": [{"title": "移动", "value": "move"}, {"title": "复制", "value": "copy"}, {"title": "硬链接", "value": "link"}, {"title": "软链接", "value": "softlink"}]}},
-            {"component": "VTextarea", "props": {"model": "monitor_confs", "label": "监控目录", "rows": 5, "placeholder": "监控目录#目标目录#转移方式#是否重命名"}},
-        ], {"enabled": False, "url": "", "token": "", "timeout": 10, "transfer_type": "move", "monitor_confs": ""})
+            {"component": "VTextField", "props": {"model": "interval", "label": "兼容模式轮询间隔（秒）", "placeholder": "10"}},
+            {"component": "VTextarea", "props": {"model": "monitor_confs", "label": "监控目录", "rows": 5, "placeholder": "监控方式#监控目录#目标目录#是否重命名"}},
+            {"component": "VTextarea", "props": {"model": "exclude_keywords", "label": "排除关键词", "rows": 2, "placeholder": "每行一个关键词"}},
+        ], {"enabled": False, "onlyonce": False, "url": "", "token": "", "timeout": 10, "transfer_type": "move", "interval": 10, "monitor_confs": "", "exclude_keywords": ""})
 
     def get_media_source(self):
         try:
