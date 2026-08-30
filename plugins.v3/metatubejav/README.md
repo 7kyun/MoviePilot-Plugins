@@ -23,9 +23,9 @@ MoviePilot V3 插件，通过自身目录监控调用局域网 Metatube，为 JA
 - `Metatube URL`：例如 `http://192.168.6.205:19876`
 - `API Token`：可选；无 Token 时留空
 - 请求超时：默认 10 秒
-- 监控目录支持换行批量配置，每行格式为 `监控方式#监控目录#目标目录#转移方式#是否重命名#覆盖模式`，例如 `fast#/downloads/jav#/media/JAV#link#true#never`。
+- 监控目录支持换行批量配置，每行格式为 `处理模式#监控目录#目标目录#转移方式#是否重命名#覆盖模式`，例如 `fast#/downloads/jav#/media/JAV#link#true#never`。
 - 转移方式支持 `move`、`copy`、`link`、`softlink`；覆盖模式支持 `never`、`always`、`by_size`、`latest`。
-- 监控方式支持 `fast`（系统事件）和 `compatibility`（轮询，适合 SMB/NAS）。
+- 处理模式支持 `fast`（性能模式）和 `compatibility`（兼容模式，适合 SMB/NAS）。两者是 MoviePilot 目录监控的性能选择，不是转移方式。
 - 立即运行一次：勾选后扫描并处理监控目录中已有文件，执行完成后自动关闭；平时仅处理新建/移动事件。
 - 排除关键词：文件名命中任一关键词时跳过处理。
 - 兼容模式轮询间隔：默认 10 秒。

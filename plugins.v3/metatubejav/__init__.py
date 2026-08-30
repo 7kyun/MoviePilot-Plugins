@@ -134,7 +134,15 @@ class MetatubeJav(_PluginBase):
             observer.daemon = True
             observer.start()
             self._observers.append(observer)
-            logger.info("Metatube JAV 目录监控已启动：%s -> %s（模式=%s，转移=%s，重命名=%s）", source, target, mode, self._transfer_type, rename)
+            logger.info(
+                "Metatube JAV 目录监控已启动：%s -> %s（处理模式=%s，转移=%s，重命名=%s，覆盖=%s）",
+                source,
+                target,
+                mode,
+                transfer_type,
+                rename,
+                overwrite,
+            )
             self._monitor_targets[source] = (target, transfer_type, rename, overwrite)
 
     def _scan_monitor(self, source_dir: str) -> None:
@@ -173,7 +181,7 @@ class MetatubeJav(_PluginBase):
             logger.info("Metatube JAV 全量处理第 %d/%d 个视频：%s", index, len(files), path)
             destination = None
             try:
-                self._handle_monitored_file(str(path), source_dir)
+                destination = self._handle_monitored_file(str(path), source_dir)
             except Exception:
                 logger.exception("Metatube JAV 全量处理单个文件异常，继续下一个：%s", path)
             logger.info("Metatube JAV 全量处理完成第 %d/%d 个视频：%s -> %s", index, len(files), path, destination or "未整理")
@@ -273,9 +281,9 @@ class MetatubeJav(_PluginBase):
                 {"component": "VCol", "props": {"cols": 12, "md": 3}, "content": [{"component": "VSwitch", "props": {"model": "notify", "label": "发送通知"}}]},
             ]},
             {"component": "VRow", "content": [
-                {"component": "VCol", "props": {"cols": 12, "md": 6}, "content": [{"component": "VTextField", "props": {"model": "interval", "label": "兼容模式轮询间隔", "placeholder": "10"}}]},
+                {"component": "VCol", "props": {"cols": 12, "md": 6}, "content": [{"component": "VTextField", "props": {"model": "interval", "label": "兼容模式轮询间隔", "placeholder": "10", "hint": "处理模式为 compatibility 时生效"}}]},
             ]},
-            {"component": "VRow", "content": [{"component": "VCol", "props": {"cols": 12}, "content": [{"component": "VTextarea", "props": {"model": "monitor_confs", "label": "监控目录（支持换行批量配置）", "rows": 5, "placeholder": "fast#/源目录#/目标目录#link#true#never\ncompatibility#/源目录2#/目标目录2#move#false#by_size"}}]}]},
+            {"component": "VRow", "content": [{"component": "VCol", "props": {"cols": 12}, "content": [{"component": "VTextarea", "props": {"model": "monitor_confs", "label": "监控目录（支持换行批量配置）", "rows": 5, "hint": "格式：处理模式#监控目录#目标目录#转移方式#是否重命名#覆盖模式；fast=性能模式，compatibility=兼容模式", "placeholder": "fast#/源目录#/目标目录#link#true#never\ncompatibility#/源目录2#/目标目录2#move#false#by_size"}}]}]},
             {"component": "VRow", "content": [{"component": "VCol", "props": {"cols": 12}, "content": [{"component": "VTextarea", "props": {"model": "exclude_keywords", "label": "排除关键词", "rows": 2, "placeholder": "每行一个关键词"}}]}]},
             {"component": "VRow", "content": [
                 {"component": "VCol", "props": {"cols": 12, "md": 8}, "content": [{"component": "VTextField", "props": {"model": "url", "label": "Metatube URL"}}]},
