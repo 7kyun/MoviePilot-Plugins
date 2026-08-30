@@ -1,10 +1,10 @@
 # Metatube JAV 元数据
 
-MoviePilot V3 插件，通过局域网 Metatube 服务为 JAV 资源提供搜索、识别、详情刮削和文件整理。
+MoviePilot V3 插件，通过自身目录监控调用局域网 Metatube，为 JAV 资源执行识别、刮削和文件整理。
 
 ## 功能
 
-- 按番号或标题搜索 Metatube 电影数据。
+- 仅扫描插件配置的目录，不注册 MoviePilot 全局媒体源或识别 provider。
 - 将 Metatube `MovieInfo` 映射为 MoviePilot V3 `MediaInfo`。
 - 保留番号、标题、发行日期、演员、标签、制作商、评分、简介、时长和封面。
 - 使用 `media_source=metatube-jav` 与 `media_id=<provider>:<番号>` 作为稳定媒体身份。
