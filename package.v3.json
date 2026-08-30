@@ -1,4 +1,15 @@
 {
+  "MetatubeJav": {
+    "name": "Metatube JAV 元数据",
+    "description": "通过局域网 Metatube 服务搜索、刮削并整理 JAV 资源。",
+    "labels": "元数据,JAV,刮削,文件整理",
+    "version": "1.0.0",
+    "author": "7kyun",
+    "level": 1,
+    "release": false,
+    "system_version": ">=3.0.0",
+    "history": {"v1.0.0": "初始 V3 版本。"}
+  },
   "AutoSubv2": {
     "name": "AI字幕自动生成(v2)",
     "description": "使用 whisper 自动生成视频文件字幕，并使用大模型翻译字幕成中文。",
