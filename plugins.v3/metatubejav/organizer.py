@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import re
-import shutil
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -12,6 +11,11 @@ try:
 except Exception:
     import logging
     logger = logging.getLogger("metatubejav")
+
+try:
+    from app.sdk.utilities import SystemUtils
+except Exception:
+    SystemUtils = None
 
 INVALID_CHARS = re.compile(r"[\\/:*?\"<>|\x00-\x1f]+")
 
@@ -70,13 +74,22 @@ def organize_file(source: str | Path, library_root: str | Path, meta: JavTitle, 
         logger.info("Metatube JAV 整理准备创建目标目录：%s", destination_dir)
         destination_dir.mkdir(parents=True, exist_ok=True)
         logger.info("Metatube JAV 整理开始文件转移：方式=%s，源=%s，目标=%s", transfer_type, src, destination)
-        if transfer_type == "copy":
-            shutil.copy2(str(src), str(destination))
-        elif transfer_type == "link":
-            destination.hardlink_to(src)
+        if SystemUtils is None:
+            raise RuntimeError("MoviePilot SystemUtils 不可用，无法执行文件整理")
+        if transfer_type == "link":
+            retcode, retmsg = SystemUtils.link(src, destination)
         elif transfer_type == "softlink":
-            destination.symlink_to(src)
+            retcode, retmsg = SystemUtils.softlink(src, destination)
+        elif transfer_type == "move":
+            retcode, retmsg = SystemUtils.move(src, destination)
         else:
-            shutil.move(str(src), str(destination))
-        logger.info("Metatube JAV 整理文件转移完成：%s", destination)
+            retcode, retmsg = SystemUtils.copy(src, destination)
+        logger.info(
+            "Metatube JAV 整理文件转移返回：代码=%s，消息=%s，目标=%s",
+            retcode,
+            retmsg or "成功",
+            destination,
+        )
+        if retcode != 0:
+            raise OSError(f"MoviePilot 文件转移失败（{transfer_type}）：{retmsg or retcode}")
     return OrganizeResult(src, destination, not dry_run)
