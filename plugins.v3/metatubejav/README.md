@@ -9,6 +9,7 @@ MoviePilot V3 插件，通过局域网 Metatube 服务为 JAV 资源提供搜索
 - 保留番号、标题、发行日期、演员、标签、制作商、评分、简介、时长和封面。
 - 使用 `media_source=metatube-jav` 与 `media_id=<provider>:<番号>` 作为稳定媒体身份。
 - 按 `番号 - 标题 (年份)/番号 - 标题.ext` 整理文件。
+- 支持插件内目录监控，自动识别新加入的 JAV 视频并整理到目标目录。
 - 清理文件系统非法字符，保留扩展名，目标冲突时自动追加 `-2`、`-3`。
 
 ## 版本与兼容性
@@ -22,6 +23,8 @@ MoviePilot V3 插件，通过局域网 Metatube 服务为 JAV 资源提供搜索
 - `Metatube URL`：例如 `http://192.168.6.205:19876`
 - `API Token`：可选；无 Token 时留空
 - 请求超时：默认 10 秒
+- 监控目录：每行格式为 `监控目录#目标目录#转移方式#是否重命名`，例如 `/downloads/jav#/media/JAV#move#true`。
+- 转移方式支持 `move`、`copy`、`link`、`softlink`；仅匹配到 JAV 番号的视频会被处理。
 
 也支持环境变量：
 
@@ -49,4 +52,3 @@ GET /v1/movies/<provider>/<id>?lazy=true
 ```bash
 python3 -m compileall -q plugins.v3/metatubejav
 ```
-

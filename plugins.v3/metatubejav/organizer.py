@@ -33,7 +33,7 @@ class OrganizeResult:
     moved: bool
 
 
-def organize_file(source: str | Path, library_root: str | Path, meta: JavTitle, *, dry_run: bool = False) -> OrganizeResult:
+def organize_file(source: str | Path, library_root: str | Path, meta: JavTitle, *, dry_run: bool = False, transfer_type: str = "move") -> OrganizeResult:
     src = Path(source)
     if not src.is_file():
         raise FileNotFoundError(src)
@@ -50,5 +50,12 @@ def organize_file(source: str | Path, library_root: str | Path, meta: JavTitle, 
             index += 1
     if not dry_run:
         destination_dir.mkdir(parents=True, exist_ok=True)
-        shutil.move(str(src), str(destination))
+        if transfer_type == "copy":
+            shutil.copy2(str(src), str(destination))
+        elif transfer_type == "link":
+            destination.hardlink_to(src)
+        elif transfer_type == "softlink":
+            destination.symlink_to(src)
+        else:
+            shutil.move(str(src), str(destination))
     return OrganizeResult(src, destination, not dry_run)

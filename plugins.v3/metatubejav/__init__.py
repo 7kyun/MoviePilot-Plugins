@@ -2,7 +2,15 @@ from __future__ import annotations
 
 import os
 import logging
+from pathlib import Path
 from typing import Any
+
+try:
+    from watchdog.events import FileSystemEventHandler
+    from watchdog.observers import Observer
+except ImportError:
+    FileSystemEventHandler = None
+    Observer = None
 
 try:
     from app import schemas
@@ -19,12 +27,29 @@ from .normalizer import normalize_code, title as parse_title
 from .organizer import organize_file
 
 PLUGIN_MEDIA_SOURCE = "metatube-jav"
+VIDEO_EXTENSIONS = {".mp4", ".mkv", ".avi", ".mov", ".wmv", ".ts", ".m2ts", ".flv", ".webm"}
+
+
+if FileSystemEventHandler is not None:
+    class _MonitorHandler(FileSystemEventHandler):
+        def __init__(self, plugin, source_dir):
+            super().__init__()
+            self.plugin = plugin
+            self.source_dir = source_dir
+
+        def on_created(self, event):
+            if not event.is_directory:
+                self.plugin._handle_monitored_file(event.src_path, self.source_dir)
+
+        def on_moved(self, event):
+            if not event.is_directory:
+                self.plugin._handle_monitored_file(event.dest_path, self.source_dir)
 
 
 class MetatubeJav(_PluginBase):
     plugin_name = "Metatube JAV"
     plugin_desc = "使用局域网 Metatube 服务刮削 JAV 元数据并参与文件整理。"
-    plugin_version = "1.0.6"
+    plugin_version = "1.1.0"
     plugin_author = "7kyun"
     plugin_config_prefix = "metatubejav_"
     auth_level = 1
@@ -33,8 +58,11 @@ class MetatubeJav(_PluginBase):
         super().__init__()
         self._enabled = False
         self._client = None
+        self._observers = []
+        self._monitor_targets = {}
 
     def init_plugin(self, config: dict = None):
+        self.stop_service()
         config = config or {}
         self._enabled = bool(config.get("enabled", True))
         url = config.get("url") or os.getenv("METATUBE_URL", "http://metatube:8080")
@@ -45,12 +73,64 @@ class MetatubeJav(_PluginBase):
             float(config.get("timeout", 10)),
         )
         logger.info("Metatube JAV 插件已%s，服务地址：%s", "启用" if self._enabled else "禁用", url)
+        if self._enabled:
+            self._start_monitors(str(config.get("monitor_confs") or os.getenv("METATUBE_MONITOR_CONFS", "")))
+
+    def _start_monitors(self, monitor_confs: str) -> None:
+        if not monitor_confs:
+            return
+        if Observer is None:
+            logger.error("Metatube JAV 无法启动目录监控：未安装 watchdog")
+            return
+        self._observers = []
+        for line in monitor_confs.splitlines():
+            parts = [item.strip() for item in line.split("#")]
+            if len(parts) != 4:
+                logger.error("Metatube JAV 监控配置格式错误：%s", line)
+                continue
+            source, target, transfer_type, rename = parts
+            if not Path(source).is_dir():
+                logger.warning("Metatube JAV 监控目录不存在：%s", source)
+                continue
+            observer = Observer()
+            observer.schedule(_MonitorHandler(self, source), source, recursive=True)
+            observer.daemon = True
+            observer.start()
+            self._observers.append(observer)
+            logger.info("Metatube JAV 目录监控已启动：%s -> %s（%s，重命名=%s）", source, target, transfer_type, rename)
+            self._monitor_targets[source] = (target, transfer_type, rename)
+
+    def _handle_monitored_file(self, path: str, source_dir: str) -> None:
+        file_path = Path(path)
+        if file_path.suffix.lower() not in VIDEO_EXTENSIONS:
+            return
+        code = normalize_code(file_path.stem)
+        if not code:
+            logger.debug("Metatube JAV 监控跳过普通资源：%s", path)
+            return
+        target, transfer_type, rename = self._monitor_targets.get(source_dir, (None, None, None))
+        if not target:
+            return
+        try:
+            meta = self._client.detail(code)
+            result = organize_file(file_path, target, meta, transfer_type=transfer_type)
+            logger.info("Metatube JAV 自动整理完成：%s -> %s（方式=%s，重命名=%s）", path, result.destination, transfer_type, rename)
+        except Exception:
+            logger.exception("Metatube JAV 自动整理失败：%s", path)
 
     def stop_service(self) -> None:
         """释放插件资源；可被 MoviePilot 重复调用。"""
         client = self._client
         self._enabled = False
         self._client = None
+        for observer in getattr(self, "_observers", []):
+            try:
+                observer.stop()
+                observer.join(timeout=5)
+            except Exception:
+                logger.exception("Metatube JAV 停止目录监控失败")
+        self._observers = []
+        self._monitor_targets = {}
         close = getattr(client, "close", None)
         if callable(close):
             close()
@@ -67,7 +147,9 @@ class MetatubeJav(_PluginBase):
             {"component": "VSwitch", "props": {"model": "enabled", "label": "启用 Metatube JAV"}},
             {"component": "VTextField", "props": {"model": "url", "label": "Metatube URL"}},
             {"component": "VTextField", "props": {"model": "token", "label": "API Token", "type": "password"}},
-        ], {"enabled": False, "url": "", "token": "", "timeout": 10})
+            {"component": "VSelect", "props": {"model": "transfer_type", "label": "转移方式", "items": [{"title": "移动", "value": "move"}, {"title": "复制", "value": "copy"}, {"title": "硬链接", "value": "link"}, {"title": "软链接", "value": "softlink"}]}},
+            {"component": "VTextarea", "props": {"model": "monitor_confs", "label": "监控目录", "rows": 5, "placeholder": "监控目录#目标目录#转移方式#是否重命名"}},
+        ], {"enabled": False, "url": "", "token": "", "timeout": 10, "transfer_type": "move", "monitor_confs": ""})
 
     def get_media_source(self):
         try:
