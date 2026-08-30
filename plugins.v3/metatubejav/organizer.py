@@ -18,12 +18,21 @@ except Exception:
     SystemUtils = None
 
 INVALID_CHARS = re.compile(r"[\\/:*?\"<>|\x00-\x1f]+")
+MAX_COMPONENT_BYTES = 220
+
+
+def _limit_component(value: str, max_bytes: int = MAX_COMPONENT_BYTES) -> str:
+    """限制单个文件系统名称的 UTF-8 字节长度，避免日文标题超过 255 字节。"""
+    encoded = value.encode("utf-8")
+    if len(encoded) <= max_bytes:
+        return value
+    return encoded[:max_bytes].decode("utf-8", errors="ignore").rstrip(" .")
 
 
 def safe_name(value: str, fallback: str = "JAV") -> str:
     value = INVALID_CHARS.sub(" ", value or "")
     value = re.sub(r"\s+", " ", value).strip(" .")
-    return value or fallback
+    return _limit_component(value or fallback)
 
 
 def folder_name(meta: JavTitle) -> str:
