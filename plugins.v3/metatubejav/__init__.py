@@ -54,7 +54,7 @@ if FileSystemEventHandler is not None:
 class MetatubeJav(_PluginBase):
     plugin_name = "Metatube JAV"
     plugin_desc = "使用局域网 Metatube 服务刮削 JAV 元数据并参与文件整理。"
-    plugin_version = "1.4.0"
+    plugin_version = "1.4.1"
     plugin_author = "7kyun"
     plugin_config_prefix = "metatubejav_"
     auth_level = 1
@@ -134,12 +134,18 @@ class MetatubeJav(_PluginBase):
     def _scan_monitor(self, source_dir: str) -> None:
         logger.info("Metatube JAV 开始扫描监控目录：%s", source_dir)
         count = 0
-        for path in Path(source_dir).rglob("*"):
-            if path.is_file():
-                count += 1
-                self._handle_monitored_file(str(path), source_dir)
-                time.sleep(self._request_interval)
-        logger.info("Metatube JAV 监控目录扫描完成：%s，共检查 %d 个文件", source_dir, count)
+        try:
+            for path in Path(source_dir).rglob("*"):
+                if path.is_file():
+                    count += 1
+                    logger.info("Metatube JAV 全量扫描处理第 %d 个文件：%s", count, path)
+                    self._handle_monitored_file(str(path), source_dir)
+                    if self._request_interval:
+                        time.sleep(self._request_interval)
+        except Exception:
+            logger.exception("Metatube JAV 全量扫描异常中止：%s，已检查 %d 个文件", source_dir, count)
+        finally:
+            logger.info("Metatube JAV 监控目录扫描完成：%s，共检查 %d 个文件", source_dir, count)
 
     def _handle_monitored_file(self, path: str, source_dir: str) -> None:
         file_path = Path(path)
@@ -262,10 +268,9 @@ class MetatubeJav(_PluginBase):
             return []
 
     def recognize_media(self, meta: Any, mtype: Any = None, media_source: Any = None, **kwargs: Any):
-        logger.info("Metatube JAV 收到识别请求：标题=%s，媒体源=%s", getattr(meta, "name", None) or getattr(meta, "title", ""), media_source)
         if not self._source_matches(media_source):
-            logger.debug("Metatube JAV 识别跳过：媒体源不匹配")
             return None
+        logger.info("Metatube JAV 收到识别请求：标题=%s，媒体源=%s", getattr(meta, "name", None) or getattr(meta, "title", ""), media_source)
         results = self.search_medias(meta, PLUGIN_MEDIA_SOURCE)
         logger.info("Metatube JAV 识别%s：%s", "成功" if results else "失败", getattr(meta, "name", None) or getattr(meta, "title", ""))
         return results[0] if results else None
