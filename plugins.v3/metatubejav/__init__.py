@@ -54,7 +54,7 @@ if FileSystemEventHandler is not None:
 class MetatubeJav(_PluginBase):
     plugin_name = "Metatube JAV"
     plugin_desc = "使用局域网 Metatube 服务刮削 JAV 元数据并参与文件整理。"
-    plugin_version = "1.6.1"
+    plugin_version = "1.6.2"
     plugin_author = "7kyun"
     plugin_config_prefix = "metatubejav_"
     auth_level = 1
@@ -96,8 +96,7 @@ class MetatubeJav(_PluginBase):
             self._start_monitors(str(config.get("monitor_confs") or os.getenv("METATUBE_MONITOR_CONFS", "")))
             if onlyonce:
                 logger.info("Metatube JAV 监控服务启动，立即执行一次全量扫描")
-                for source in self._monitor_targets:
-                    threading.Thread(target=self._scan_monitor, args=(source,), daemon=True).start()
+                threading.Thread(target=self._scan_all_monitors, daemon=True).start()
                 self.update_config({**config, "onlyonce": False})
 
     def _start_monitors(self, monitor_confs: str) -> None:
@@ -156,6 +155,23 @@ class MetatubeJav(_PluginBase):
             logger.exception("Metatube JAV 全量扫描异常中止：%s，已处理 %d 个视频", source_dir, processed)
         finally:
             logger.info("Metatube JAV 监控目录扫描完成：%s，共处理 %d 个视频", source_dir, processed)
+
+    def _scan_all_monitors(self) -> None:
+        """先递归收集全部监控目录的视频，再按顺序处理。"""
+        files = []
+        for source_dir in self._monitor_targets:
+            files.extend(
+                (path, source_dir)
+                for path in Path(source_dir).rglob("*")
+                if path.is_file() and path.suffix.lower() in VIDEO_EXTENSIONS
+            )
+        files.sort(key=lambda item: str(item[0]).lower())
+        logger.info("Metatube JAV 全量递归扫描完成，共发现 %d 个视频文件", len(files))
+        for index, (path, source_dir) in enumerate(files, 1):
+            logger.info("Metatube JAV 全量处理第 %d/%d 个视频：%s", index, len(files), path)
+            self._handle_monitored_file(str(path), source_dir)
+            if self._request_interval and index < len(files):
+                time.sleep(self._request_interval)
 
     def _handle_monitored_file(self, path: str, source_dir: str) -> None:
         file_path = Path(path)
