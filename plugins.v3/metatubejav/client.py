@@ -7,7 +7,7 @@ import urllib.parse
 import urllib.request
 from typing import Any
 
-from .errors import MetatubeNotFoundError, MetatubeProtocolError, MetatubeTransportError
+from .errors import MetatubeNotFoundError, MetatubeProtocolError, MetatubeTransportError, MetatubeValidationError
 from .models import JavSearchItem, JavTitle
 from .normalizer import search_item, title
 
@@ -40,11 +40,15 @@ class MetatubeClient:
         except urllib.error.HTTPError as exc:
             if exc.code == 404:
                 raise MetatubeNotFoundError(f"Metatube resource not found: {path}") from exc
+            if exc.code == 422:
+                raise MetatubeValidationError(f"Metatube rejected request: {path}") from exc
             raise MetatubeTransportError(f"Metatube HTTP {exc.code} for {path}") from exc
         except (urllib.error.URLError, TimeoutError, OSError) as exc:
             raise MetatubeTransportError(f"Metatube request failed: {path}") from exc
         if status == 404:
             raise MetatubeNotFoundError(f"Metatube resource not found: {path}")
+        if status == 422:
+            raise MetatubeValidationError(f"Metatube rejected request: {path}")
         if status < 200 or status >= 300:
             raise MetatubeTransportError(f"Metatube HTTP {status} for {path}")
         try:

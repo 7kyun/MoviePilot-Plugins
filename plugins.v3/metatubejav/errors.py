@@ -12,3 +12,8 @@ class MetatubeProtocolError(MetatubeError):
 
 class MetatubeNotFoundError(MetatubeError):
     pass
+
+
+class MetatubeValidationError(MetatubeError):
+    """Metatube rejected request parameters (HTTP 422)."""
+    pass

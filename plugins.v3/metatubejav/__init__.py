@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import logging
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -25,6 +26,7 @@ except Exception:
 from .client import MetatubeClient
 from .normalizer import normalize_code, title as parse_title
 from .organizer import organize_file
+from .errors import MetatubeValidationError
 
 PLUGIN_MEDIA_SOURCE = "metatube-jav"
 VIDEO_EXTENSIONS = {".mp4", ".mkv", ".avi", ".mov", ".wmv", ".ts", ".m2ts", ".flv", ".webm"}
@@ -49,7 +51,7 @@ if FileSystemEventHandler is not None:
 class MetatubeJav(_PluginBase):
     plugin_name = "Metatube JAV"
     plugin_desc = "使用局域网 Metatube 服务刮削 JAV 元数据并参与文件整理。"
-    plugin_version = "1.1.0"
+    plugin_version = "1.1.1"
     plugin_author = "7kyun"
     plugin_config_prefix = "metatubejav_"
     auth_level = 1
@@ -60,6 +62,7 @@ class MetatubeJav(_PluginBase):
         self._client = None
         self._observers = []
         self._monitor_targets = {}
+        self._api_lock = threading.Semaphore(1)
 
     def init_plugin(self, config: dict = None):
         self.stop_service()
@@ -112,9 +115,12 @@ class MetatubeJav(_PluginBase):
         if not target:
             return
         try:
-            meta = self._client.detail(code)
+            with self._api_lock:
+                meta = self._client.detail(code)
             result = organize_file(file_path, target, meta, transfer_type=transfer_type, rename=str(rename).lower() != "false")
             logger.info("Metatube JAV 自动整理完成：%s -> %s（方式=%s，重命名=%s）", path, result.destination, transfer_type, rename)
+        except MetatubeValidationError as exc:
+            logger.warning("Metatube JAV 请求被拒绝（422），跳过文件：%s，原因：%s", path, exc)
         except Exception:
             logger.exception("Metatube JAV 自动整理失败：%s", path)
 
@@ -193,9 +199,13 @@ class MetatubeJav(_PluginBase):
             return []
         logger.info("Metatube JAV 开始搜索：%s", code)
         try:
-            results = self._client.search(code)
+            with self._api_lock:
+                results = self._client.search(code)
             logger.info("Metatube JAV 搜索完成：%s，结果数：%d", code, len(results))
             return [self._media_info(parse_title({"id": r.id, "number": r.code, "title": r.title, "provider": r.provider, "homepage": r.homepage, "thumb_url": r.poster, "release_date": r.release_date})) for r in results]
+        except MetatubeValidationError as exc:
+            logger.warning("Metatube JAV 搜索请求被拒绝（422）：%s", exc)
+            return []
         except Exception:
             logger.exception("Metatube JAV 搜索失败：%s", code)
             return []
