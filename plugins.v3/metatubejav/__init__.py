@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 import os
+import logging
 from typing import Any
 
 try:
     from app import schemas
     from app.plugins import _PluginBase
+    from app.sdk.logging import logger
 except Exception:
     schemas = None
+    logger = logging.getLogger(__name__)
     class _PluginBase:
         def __init__(self, *args, **kwargs): pass
 
@@ -21,7 +24,7 @@ PLUGIN_MEDIA_SOURCE = "metatube-jav"
 class MetatubeJav(_PluginBase):
     plugin_name = "Metatube JAV"
     plugin_desc = "使用局域网 Metatube 服务刮削 JAV 元数据并参与文件整理。"
-    plugin_version = "1.0.2"
+    plugin_version = "1.0.3"
     plugin_author = "7kyun"
     plugin_config_prefix = "metatubejav_"
     auth_level = 1
@@ -34,11 +37,14 @@ class MetatubeJav(_PluginBase):
     def init_plugin(self, config: dict = None):
         config = config or {}
         self._enabled = bool(config.get("enabled", True))
+        url = config.get("url") or os.getenv("METATUBE_URL", "http://metatube:8080")
+        token = config.get("token") or os.getenv("METATUBE_TOKEN") or None
         self._client = MetatubeClient(
-            config.get("url") or os.getenv("METATUBE_URL", "http://metatube:8080"),
-            config.get("token") or os.getenv("METATUBE_TOKEN") or None,
+            url,
+            token,
             float(config.get("timeout", 10)),
         )
+        logger.info("Metatube JAV 插件已%s，服务地址：%s", "启用" if self._enabled else "禁用", url)
 
     def stop_service(self) -> None:
         """释放插件资源；可被 MoviePilot 重复调用。"""
@@ -48,6 +54,7 @@ class MetatubeJav(_PluginBase):
         close = getattr(client, "close", None)
         if callable(close):
             close()
+        logger.info("Metatube JAV 插件服务已停止")
 
     def get_state(self):
         return self._enabled and self._client is not None
@@ -75,16 +82,29 @@ class MetatubeJav(_PluginBase):
 
     def search_medias(self, meta: Any, media_source: Any = None, **_: Any):
         if not self.get_state() or (media_source and str(getattr(media_source, "value", media_source)) != PLUGIN_MEDIA_SOURCE):
+            logger.debug("Metatube JAV 搜索跳过：插件未启用或媒体源不匹配")
             return []
         query = str(getattr(meta, "name", "") or getattr(meta, "title", "") or "").strip()
-        if not query: return []
-        return [self._media_info(parse_title({"id": r.id, "number": r.code, "title": r.title, "provider": r.provider, "homepage": r.homepage, "thumb_url": r.poster, "release_date": r.release_date})) for r in self._client.search(query)]
+        if not query:
+            logger.debug("Metatube JAV 搜索跳过：查询标题为空")
+            return []
+        logger.info("Metatube JAV 开始搜索：%s", query)
+        try:
+            results = self._client.search(query)
+            logger.info("Metatube JAV 搜索完成：%s，结果数：%d", query, len(results))
+            return [self._media_info(parse_title({"id": r.id, "number": r.code, "title": r.title, "provider": r.provider, "homepage": r.homepage, "thumb_url": r.poster, "release_date": r.release_date})) for r in results]
+        except Exception:
+            logger.exception("Metatube JAV 搜索失败：%s", query)
+            return []
 
     def recognize_media(self, meta: Any, mtype: Any = None, **kwargs: Any):
         results = self.search_medias(meta, PLUGIN_MEDIA_SOURCE)
+        logger.info("Metatube JAV 识别%s：%s", "成功" if results else "失败", getattr(meta, "name", None) or getattr(meta, "title", ""))
         return results[0] if results else None
 
     def organize(self, source: str, library_root: str, media_id: str, provider: str | None = None, *, dry_run: bool = False):
         if not self.get_state(): raise RuntimeError("Metatube JAV plugin is disabled")
+        logger.info("Metatube JAV 开始整理：%s", source)
         result = organize_file(source, library_root, self._client.detail(media_id, provider), dry_run=dry_run)
+        logger.info("Metatube JAV 整理%s：%s -> %s", "预览" if dry_run else "完成", result.source, result.destination)
         return {"source": str(result.source), "destination": str(result.destination), "moved": result.moved}
