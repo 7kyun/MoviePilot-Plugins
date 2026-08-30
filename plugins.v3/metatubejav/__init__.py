@@ -54,7 +54,7 @@ if FileSystemEventHandler is not None:
 class MetatubeJav(_PluginBase):
     plugin_name = "Metatube JAV"
     plugin_desc = "使用局域网 Metatube 服务刮削 JAV 元数据并参与文件整理。"
-    plugin_version = "1.7.0"
+    plugin_version = "1.7.1"
     plugin_author = "7kyun"
     plugin_config_prefix = "metatubejav_"
     auth_level = 1
@@ -203,12 +203,30 @@ class MetatubeJav(_PluginBase):
             result = organize_file(file_path, target, meta, transfer_type=transfer_type, rename=str(rename).lower() != "false", overwrite=overwrite)
             if not result.moved:
                 logger.info("Metatube JAV 目标已存在，按覆盖模式跳过：%s", result.destination)
+                file_path.unlink(missing_ok=True)
+                logger.info("Metatube JAV 已删除未覆盖的源文件：%s", file_path)
+                self._cleanup_empty_dirs(file_path.parent, source_dir)
                 return
             logger.info("Metatube JAV 自动整理完成：%s -> %s（方式=%s，重命名=%s）", path, result.destination, transfer_type, rename)
+            self._cleanup_empty_dirs(file_path.parent, source_dir)
         except MetatubeValidationError as exc:
             logger.warning("Metatube JAV 请求被拒绝（422），跳过文件：%s，原因：%s", path, exc)
         except Exception:
             logger.exception("Metatube JAV 自动整理失败：%s", path)
+
+    @staticmethod
+    def _cleanup_empty_dirs(directory: Path, root: str) -> None:
+        root_path = Path(root).resolve()
+        current = directory.resolve()
+        while current != root_path and root_path in current.parents:
+            try:
+                if any(current.iterdir()):
+                    break
+                current.rmdir()
+                logger.info("Metatube JAV 已删除空目录：%s", current)
+            except OSError:
+                break
+            current = current.parent
 
     def stop_service(self) -> None:
         """释放插件资源；可被 MoviePilot 重复调用。"""
