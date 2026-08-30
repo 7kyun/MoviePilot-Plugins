@@ -221,7 +221,7 @@ class MetatubeJav(_PluginBase):
                 {"component": "VCol", "props": {"cols": 12, "md": 3}, "content": [{"component": "VTextField", "props": {"model": "request_interval", "label": "请求间隔（秒）", "placeholder": "2"}}]},
                 {"component": "VCol", "props": {"cols": 12, "md": 3}, "content": [{"component": "VSelect", "props": {"model": "overwrite_mode", "label": "覆盖模式", "items": [{"title": "从不", "value": "never"}, {"title": "总是", "value": "always"}, {"title": "按文件大小", "value": "by_size"}, {"title": "仅保留最新", "value": "latest"}]}}]},
             ]},
-        ]}, {"enabled": False, "onlyonce": False, "notify": False, "url": "", "token": "", "timeout": 10, "transfer_type": "move", "interval": 10, "request_interval": 2, "overwrite_mode": "never", "monitor_confs": "", "exclude_keywords": ""})
+        ]}], {"enabled": False, "onlyonce": False, "notify": False, "url": "", "token": "", "timeout": 10, "transfer_type": "move", "interval": 10, "request_interval": 2, "overwrite_mode": "never", "monitor_confs": "", "exclude_keywords": ""})
 
     def get_media_source(self):
         # Metatube JAV 仅通过插件自身目录监控工作，不注册全局媒体源。
