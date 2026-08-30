@@ -3,7 +3,7 @@
     "name": "Metatube JAV 元数据",
     "description": "通过局域网 Metatube 服务搜索、刮削并整理 JAV 资源。",
     "labels": "元数据,JAV,刮削,文件整理",
-    "version": "1.7.1",
+    "version": "1.7.2",
     "icon": "metatubejav.png",
     "author": "7kyun",
     "level": 1,

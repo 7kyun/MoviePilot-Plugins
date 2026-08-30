@@ -54,7 +54,7 @@ if FileSystemEventHandler is not None:
 class MetatubeJav(_PluginBase):
     plugin_name = "Metatube JAV"
     plugin_desc = "使用局域网 Metatube 服务刮削 JAV 元数据并参与文件整理。"
-    plugin_version = "1.7.1"
+    plugin_version = "1.7.2"
     plugin_author = "7kyun"
     plugin_config_prefix = "metatubejav_"
     auth_level = 1
@@ -149,7 +149,7 @@ class MetatubeJav(_PluginBase):
             for index, path in enumerate(files, 1):
                 processed = index
                 logger.info("Metatube JAV 全量处理第 %d/%d 个视频：%s", index, len(files), path)
-                self._handle_monitored_file(str(path), source_dir)
+                destination = self._handle_monitored_file(str(path), source_dir)
                 if self._request_interval and index < len(files):
                     time.sleep(self._request_interval)
         except Exception:
@@ -170,19 +170,20 @@ class MetatubeJav(_PluginBase):
         logger.info("Metatube JAV 全量递归扫描完成，共发现 %d 个视频文件", len(files))
         for index, (path, source_dir) in enumerate(files, 1):
             logger.info("Metatube JAV 全量处理第 %d/%d 个视频：%s", index, len(files), path)
+            destination = None
             try:
                 self._handle_monitored_file(str(path), source_dir)
             except Exception:
                 logger.exception("Metatube JAV 全量处理单个文件异常，继续下一个：%s", path)
-            logger.info("Metatube JAV 全量处理完成第 %d/%d 个视频：%s", index, len(files), path)
+            logger.info("Metatube JAV 全量处理完成第 %d/%d 个视频：%s -> %s", index, len(files), path, destination or "未整理")
             if self._request_interval and index < len(files):
                 time.sleep(self._request_interval)
 
-    def _handle_monitored_file(self, path: str, source_dir: str) -> None:
+    def _handle_monitored_file(self, path: str, source_dir: str) -> str | None:
         with self._task_lock:
-            self._process_monitored_file(path, source_dir)
+            return self._process_monitored_file(path, source_dir)
 
-    def _process_monitored_file(self, path: str, source_dir: str) -> None:
+    def _process_monitored_file(self, path: str, source_dir: str) -> str | None:
         file_path = Path(path)
         if file_path.suffix.lower() not in VIDEO_EXTENSIONS:
             return
@@ -206,9 +207,10 @@ class MetatubeJav(_PluginBase):
                 file_path.unlink(missing_ok=True)
                 logger.info("Metatube JAV 已删除未覆盖的源文件：%s", file_path)
                 self._cleanup_empty_dirs(file_path.parent, source_dir)
-                return
+                return str(result.destination)
             logger.info("Metatube JAV 自动整理完成：%s -> %s（方式=%s，重命名=%s）", path, result.destination, transfer_type, rename)
             self._cleanup_empty_dirs(file_path.parent, source_dir)
+            return str(result.destination)
         except MetatubeValidationError as exc:
             logger.warning("Metatube JAV 请求被拒绝（422），跳过文件：%s，原因：%s", path, exc)
         except Exception:
