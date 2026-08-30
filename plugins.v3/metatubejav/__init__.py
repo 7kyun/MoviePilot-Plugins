@@ -54,7 +54,7 @@ if FileSystemEventHandler is not None:
 class MetatubeJav(_PluginBase):
     plugin_name = "Metatube JAV"
     plugin_desc = "使用局域网 Metatube 服务刮削 JAV 元数据并参与文件整理。"
-    plugin_version = "1.6.0"
+    plugin_version = "1.6.1"
     plugin_author = "7kyun"
     plugin_config_prefix = "metatubejav_"
     auth_level = 1
@@ -138,19 +138,24 @@ class MetatubeJav(_PluginBase):
 
     def _scan_monitor(self, source_dir: str) -> None:
         logger.info("Metatube JAV 开始扫描监控目录：%s", source_dir)
-        count = 0
+        processed = 0
         try:
-            for path in Path(source_dir).rglob("*"):
-                if path.is_file():
-                    count += 1
-                    logger.info("Metatube JAV 全量扫描处理第 %d 个文件：%s", count, path)
-                    self._handle_monitored_file(str(path), source_dir)
-                    if self._request_interval:
-                        time.sleep(self._request_interval)
+            files = sorted(
+                (path for path in Path(source_dir).rglob("*")
+                 if path.is_file() and path.suffix.lower() in VIDEO_EXTENSIONS),
+                key=lambda path: str(path).lower(),
+            )
+            logger.info("Metatube JAV 扫描完成，共发现 %d 个视频文件，开始逐项处理", len(files))
+            for index, path in enumerate(files, 1):
+                processed = index
+                logger.info("Metatube JAV 全量处理第 %d/%d 个视频：%s", index, len(files), path)
+                self._handle_monitored_file(str(path), source_dir)
+                if self._request_interval and index < len(files):
+                    time.sleep(self._request_interval)
         except Exception:
-            logger.exception("Metatube JAV 全量扫描异常中止：%s，已检查 %d 个文件", source_dir, count)
+            logger.exception("Metatube JAV 全量扫描异常中止：%s，已处理 %d 个视频", source_dir, processed)
         finally:
-            logger.info("Metatube JAV 监控目录扫描完成：%s，共检查 %d 个文件", source_dir, count)
+            logger.info("Metatube JAV 监控目录扫描完成：%s，共处理 %d 个视频", source_dir, processed)
 
     def _handle_monitored_file(self, path: str, source_dir: str) -> None:
         file_path = Path(path)
