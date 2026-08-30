@@ -40,6 +40,15 @@ class MetatubeJav(_PluginBase):
             float(config.get("timeout", 10)),
         )
 
+    def stop_service(self) -> None:
+        """释放插件资源；可被 MoviePilot 重复调用。"""
+        client = self._client
+        self._enabled = False
+        self._client = None
+        close = getattr(client, "close", None)
+        if callable(close):
+            close()
+
     def get_state(self):
         return self._enabled and self._client is not None
 
