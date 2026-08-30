@@ -54,7 +54,7 @@ if FileSystemEventHandler is not None:
 class MetatubeJav(_PluginBase):
     plugin_name = "Metatube JAV"
     plugin_desc = "使用局域网 Metatube 服务刮削 JAV 元数据并参与文件整理。"
-    plugin_version = "1.5.1"
+    plugin_version = "1.6.0"
     plugin_author = "7kyun"
     plugin_config_prefix = "metatubejav_"
     auth_level = 1
@@ -109,12 +109,17 @@ class MetatubeJav(_PluginBase):
         self._observers = []
         for line in monitor_confs.splitlines():
             parts = [item.strip() for item in line.split("#")]
-            if len(parts) == 4 and parts[0] in ("fast", "compatibility"):
+            if len(parts) == 6 and parts[0] in ("fast", "compatibility"):
+                mode, source, target, transfer_type, rename, overwrite = parts
+            elif len(parts) == 4 and parts[0] in ("fast", "compatibility"):
                 mode, source, target, rename = parts
+                transfer_type, overwrite = self._transfer_type, self._overwrite_mode
             elif len(parts) == 4 and parts[2] in ("move", "copy", "link", "softlink"):
                 mode, source, target, rename = "fast", parts[0], parts[1], parts[3]
+                transfer_type, overwrite = self._transfer_type, self._overwrite_mode
             elif len(parts) == 4:
                 mode, source, target, rename = "fast", *parts
+                transfer_type, overwrite = self._transfer_type, self._overwrite_mode
             elif len(parts) == 5:
                 mode, source, target, rename = parts[0], parts[1], parts[2], parts[3]
             else:
@@ -129,7 +134,7 @@ class MetatubeJav(_PluginBase):
             observer.start()
             self._observers.append(observer)
             logger.info("Metatube JAV 目录监控已启动：%s -> %s（模式=%s，转移=%s，重命名=%s）", source, target, mode, self._transfer_type, rename)
-            self._monitor_targets[source] = (target, self._transfer_type, rename)
+            self._monitor_targets[source] = (target, transfer_type, rename, overwrite)
 
     def _scan_monitor(self, source_dir: str) -> None:
         logger.info("Metatube JAV 开始扫描监控目录：%s", source_dir)
@@ -159,13 +164,13 @@ class MetatubeJav(_PluginBase):
         if not code:
             logger.debug("Metatube JAV 监控跳过普通资源：%s", path)
             return
-        target, transfer_type, rename = self._monitor_targets.get(source_dir, (None, None, None))
+        target, transfer_type, rename, overwrite = self._monitor_targets.get(source_dir, (None, None, None, "never"))
         if not target:
             return
         try:
             with self._api_lock:
                 meta = self._client.detail(code)
-            result = organize_file(file_path, target, meta, transfer_type=transfer_type, rename=str(rename).lower() != "false", overwrite=self._overwrite_mode)
+            result = organize_file(file_path, target, meta, transfer_type=transfer_type, rename=str(rename).lower() != "false", overwrite=overwrite)
             if not result.moved:
                 logger.info("Metatube JAV 目标已存在，按覆盖模式跳过：%s", result.destination)
                 return
@@ -200,17 +205,16 @@ class MetatubeJav(_PluginBase):
     def get_page(self): return None
 
     def get_form(self):
-        return [{"component": "VForm", "content": [
+        return ([{"component": "VForm", "content": [
             {"component": "VRow", "content": [
                 {"component": "VCol", "props": {"cols": 12, "md": 3}, "content": [{"component": "VSwitch", "props": {"model": "enabled", "label": "启用插件"}}]},
                 {"component": "VCol", "props": {"cols": 12, "md": 3}, "content": [{"component": "VSwitch", "props": {"model": "onlyonce", "label": "立即运行一次"}}]},
                 {"component": "VCol", "props": {"cols": 12, "md": 3}, "content": [{"component": "VSwitch", "props": {"model": "notify", "label": "发送通知"}}]},
             ]},
             {"component": "VRow", "content": [
-                {"component": "VCol", "props": {"cols": 12, "md": 6}, "content": [{"component": "VSelect", "props": {"model": "transfer_type", "label": "转移方式", "items": [{"title": "移动", "value": "move"}, {"title": "复制", "value": "copy"}, {"title": "硬链接", "value": "link"}, {"title": "软链接", "value": "softlink"}]}}]},
                 {"component": "VCol", "props": {"cols": 12, "md": 6}, "content": [{"component": "VTextField", "props": {"model": "interval", "label": "兼容模式轮询间隔", "placeholder": "10"}}]},
             ]},
-            {"component": "VRow", "content": [{"component": "VCol", "props": {"cols": 12}, "content": [{"component": "VTextarea", "props": {"model": "monitor_confs", "label": "监控目录（支持换行批量配置）", "rows": 5, "placeholder": "fast#/源目录#/目标目录#true\ncompatibility#/源目录2#/目标目录2#false"}}]}]},
+            {"component": "VRow", "content": [{"component": "VCol", "props": {"cols": 12}, "content": [{"component": "VTextarea", "props": {"model": "monitor_confs", "label": "监控目录（支持换行批量配置）", "rows": 5, "placeholder": "fast#/源目录#/目标目录#link#true#never\ncompatibility#/源目录2#/目标目录2#move#false#by_size"}}]}]},
             {"component": "VRow", "content": [{"component": "VCol", "props": {"cols": 12}, "content": [{"component": "VTextarea", "props": {"model": "exclude_keywords", "label": "排除关键词", "rows": 2, "placeholder": "每行一个关键词"}}]}]},
             {"component": "VRow", "content": [
                 {"component": "VCol", "props": {"cols": 12, "md": 8}, "content": [{"component": "VTextField", "props": {"model": "url", "label": "Metatube URL"}}]},
@@ -219,7 +223,6 @@ class MetatubeJav(_PluginBase):
             {"component": "VRow", "content": [
                 {"component": "VCol", "props": {"cols": 12, "md": 6}, "content": [{"component": "VTextField", "props": {"model": "token", "label": "API Token", "type": "password"}}]},
                 {"component": "VCol", "props": {"cols": 12, "md": 3}, "content": [{"component": "VTextField", "props": {"model": "request_interval", "label": "请求间隔（秒）", "placeholder": "2"}}]},
-                {"component": "VCol", "props": {"cols": 12, "md": 3}, "content": [{"component": "VSelect", "props": {"model": "overwrite_mode", "label": "覆盖模式", "items": [{"title": "从不", "value": "never"}, {"title": "总是", "value": "always"}, {"title": "按文件大小", "value": "by_size"}, {"title": "仅保留最新", "value": "latest"}]}}]},
             ]},
         ]}], {"enabled": False, "onlyonce": False, "notify": False, "url": "", "token": "", "timeout": 10, "transfer_type": "move", "interval": 10, "request_interval": 2, "overwrite_mode": "never", "monitor_confs": "", "exclude_keywords": ""})
 
