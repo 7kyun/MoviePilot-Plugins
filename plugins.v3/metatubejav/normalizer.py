@@ -5,7 +5,7 @@ from typing import Any
 
 from .models import JavSearchItem, JavTitle, as_mapping, first, string_list
 
-CODE_RE = re.compile(r"\b([A-Z]{2,8}[-_ ]?\d{1,6})\b", re.IGNORECASE)
+CODE_RE = re.compile(r"(?<![A-Z0-9])([A-Z]{2,8}[-_ ]?\d{1,6})(?!\d)", re.IGNORECASE)
 
 
 def normalize_code(value: Any) -> str | None:
