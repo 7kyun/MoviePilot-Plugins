@@ -24,7 +24,7 @@ PLUGIN_MEDIA_SOURCE = "metatube-jav"
 class MetatubeJav(_PluginBase):
     plugin_name = "Metatube JAV"
     plugin_desc = "使用局域网 Metatube 服务刮削 JAV 元数据并参与文件整理。"
-    plugin_version = "1.0.3"
+    plugin_version = "1.0.4"
     plugin_author = "7kyun"
     plugin_config_prefix = "metatubejav_"
     auth_level = 1
@@ -73,7 +73,15 @@ class MetatubeJav(_PluginBase):
         return [{"name": self.plugin_name, "media_source": PLUGIN_MEDIA_SOURCE, "media_types": ["电影"]}]
 
     def get_module(self):
-        return {"search_medias": self.search_medias, "recognize_media": self.recognize_media} if self.get_state() else {}
+        logger.debug("Metatube JAV 注册媒体模块，当前状态：%s", "启用" if self.get_state() else "禁用")
+        return {"search_medias": self.search_medias, "recognize_media": self.recognize_media}
+
+    @staticmethod
+    def _source_matches(media_source: Any) -> bool:
+        if media_source in (None, "", (), [], set()):
+            return True
+        values = media_source if isinstance(media_source, (list, tuple, set)) else (media_source,)
+        return any(str(getattr(value, "value", value)) == PLUGIN_MEDIA_SOURCE for value in values)
 
     def _media_info(self, item):
         year = str(item.year) if item.year is not None else None
@@ -81,7 +89,7 @@ class MetatubeJav(_PluginBase):
         return schemas.MediaInfo(**fields) if schemas is not None and hasattr(schemas, "MediaInfo") else fields
 
     def search_medias(self, meta: Any, media_source: Any = None, **_: Any):
-        if not self.get_state() or (media_source and str(getattr(media_source, "value", media_source)) != PLUGIN_MEDIA_SOURCE):
+        if not self.get_state() or not self._source_matches(media_source):
             logger.debug("Metatube JAV 搜索跳过：插件未启用或媒体源不匹配")
             return []
         query = str(getattr(meta, "name", "") or getattr(meta, "title", "") or "").strip()
@@ -97,7 +105,11 @@ class MetatubeJav(_PluginBase):
             logger.exception("Metatube JAV 搜索失败：%s", query)
             return []
 
-    def recognize_media(self, meta: Any, mtype: Any = None, **kwargs: Any):
+    def recognize_media(self, meta: Any, mtype: Any = None, media_source: Any = None, **kwargs: Any):
+        logger.info("Metatube JAV 收到识别请求：标题=%s，媒体源=%s", getattr(meta, "name", None) or getattr(meta, "title", ""), media_source)
+        if not self._source_matches(media_source):
+            logger.debug("Metatube JAV 识别跳过：媒体源不匹配")
+            return None
         results = self.search_medias(meta, PLUGIN_MEDIA_SOURCE)
         logger.info("Metatube JAV 识别%s：%s", "成功" if results else "失败", getattr(meta, "name", None) or getattr(meta, "title", ""))
         return results[0] if results else None
