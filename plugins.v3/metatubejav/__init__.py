@@ -15,7 +15,7 @@ except Exception:
         def __init__(self, *args, **kwargs): pass
 
 from .client import MetatubeClient
-from .normalizer import title as parse_title
+from .normalizer import normalize_code, title as parse_title
 from .organizer import organize_file
 
 PLUGIN_MEDIA_SOURCE = "metatube-jav"
@@ -24,7 +24,7 @@ PLUGIN_MEDIA_SOURCE = "metatube-jav"
 class MetatubeJav(_PluginBase):
     plugin_name = "Metatube JAV"
     plugin_desc = "使用局域网 Metatube 服务刮削 JAV 元数据并参与文件整理。"
-    plugin_version = "1.0.4"
+    plugin_version = "1.0.5"
     plugin_author = "7kyun"
     plugin_config_prefix = "metatubejav_"
     auth_level = 1
@@ -96,13 +96,17 @@ class MetatubeJav(_PluginBase):
         if not query:
             logger.debug("Metatube JAV 搜索跳过：查询标题为空")
             return []
-        logger.info("Metatube JAV 开始搜索：%s", query)
+        code = normalize_code(query)
+        if not code:
+            logger.debug("Metatube JAV 搜索跳过：未识别到 JAV 番号，标题=%s", query)
+            return []
+        logger.info("Metatube JAV 开始搜索：%s", code)
         try:
-            results = self._client.search(query)
-            logger.info("Metatube JAV 搜索完成：%s，结果数：%d", query, len(results))
+            results = self._client.search(code)
+            logger.info("Metatube JAV 搜索完成：%s，结果数：%d", code, len(results))
             return [self._media_info(parse_title({"id": r.id, "number": r.code, "title": r.title, "provider": r.provider, "homepage": r.homepage, "thumb_url": r.poster, "release_date": r.release_date})) for r in results]
         except Exception:
-            logger.exception("Metatube JAV 搜索失败：%s", query)
+            logger.exception("Metatube JAV 搜索失败：%s", code)
             return []
 
     def recognize_media(self, meta: Any, mtype: Any = None, media_source: Any = None, **kwargs: Any):
