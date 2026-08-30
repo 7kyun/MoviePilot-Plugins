@@ -113,7 +113,7 @@ class MetatubeJav(_PluginBase):
             return
         try:
             meta = self._client.detail(code)
-            result = organize_file(file_path, target, meta, transfer_type=transfer_type)
+            result = organize_file(file_path, target, meta, transfer_type=transfer_type, rename=str(rename).lower() != "false")
             logger.info("Metatube JAV 自动整理完成：%s -> %s（方式=%s，重命名=%s）", path, result.destination, transfer_type, rename)
         except Exception:
             logger.exception("Metatube JAV 自动整理失败：%s", path)
