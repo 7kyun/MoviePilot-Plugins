@@ -5,16 +5,26 @@ from typing import Any
 
 from .models import JavSearchItem, JavTitle, as_mapping, first, string_list
 
-CODE_RE = re.compile(r"(?<![A-Z0-9])([A-Z]{2,8}[-_ ]?\d{1,6})(?!\d)", re.IGNORECASE)
+NUMBER_RE = re.compile(r"(?i)([a-z\d]+(?:[-_][a-z\d]{2,})+)")
+ALNUM_RE = re.compile(r"(?i)((?:[a-z]+\d|\d+[a-z])[a-z\d]+)")
 
 
 def normalize_code(value: Any) -> str | None:
     if not value:
         return None
-    match = CODE_RE.search(str(value).upper())
+    text = str(value).strip()
+    text = re.sub(r"(?i)([a-z\d]+\.(?:com|net|top|xyz|tv))(?:[^a-z\d]|$)", "", text)
+    text = re.sub(r"(?i)^(?:f?hd|sd)[-_](.*$)", r"\1", text)
+    match = NUMBER_RE.search(text) or ALNUM_RE.search(text)
     if not match:
         return None
-    return re.sub(r"[ _]+", "-", match.group(1))
+    code = match.group(1)
+    code = re.sub(r"(?i)[-_.](dvd|iso|mkv|mp4|c?avi|\d*fps|whole|(f|hhb)?hd\d*|sd\d*|(?:360|480|720|1080|2160)[pi]|x1080x|uncensored|leak|[2468]ks?|[xh]26[45])+", "", code)
+    code = re.sub(r"(?i)([-_](c|uc|ch|cd\d{1,2})|hhb\d*|ch|[a-d])\s*$", "", code)
+    code = re.sub(r"(?i)^fc2[-_]?ppv[-_]", "FC2-", code)
+    code = re.sub(r"(?i)^fc2[_-]?ppv[-_]?(\d+)$", r"FC2-\1", code)
+    code = re.sub(r"[ _]+", "-", code).strip("-_. ")
+    return code.upper() if code else None
 
 
 def normalize_title(value: Any) -> str:
