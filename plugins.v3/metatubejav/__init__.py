@@ -54,7 +54,7 @@ if FileSystemEventHandler is not None:
 class MetatubeJav(_PluginBase):
     plugin_name = "Metatube JAV"
     plugin_desc = "使用局域网 Metatube 服务刮削 JAV 元数据并参与文件整理。"
-    plugin_version = "1.7.3"
+    plugin_version = "1.7.4"
     plugin_author = "7kyun"
     plugin_config_prefix = "metatubejav_"
     auth_level = 1
@@ -121,7 +121,8 @@ class MetatubeJav(_PluginBase):
                 mode, source, target, rename = "fast", *parts
                 transfer_type, overwrite = self._transfer_type, self._overwrite_mode
             elif len(parts) == 5:
-                mode, source, target, rename = parts[0], parts[1], parts[2], parts[3]
+                mode, source, target, transfer_type, rename = parts
+                overwrite = self._overwrite_mode
             else:
                 logger.error("Metatube JAV 监控配置格式错误：%s", line)
                 continue
