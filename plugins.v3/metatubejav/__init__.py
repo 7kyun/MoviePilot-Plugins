@@ -24,7 +24,7 @@ PLUGIN_MEDIA_SOURCE = "metatube-jav"
 class MetatubeJav(_PluginBase):
     plugin_name = "Metatube JAV"
     plugin_desc = "使用局域网 Metatube 服务刮削 JAV 元数据并参与文件整理。"
-    plugin_version = "1.0.5"
+    plugin_version = "1.0.6"
     plugin_author = "7kyun"
     plugin_config_prefix = "metatubejav_"
     auth_level = 1
@@ -70,7 +70,16 @@ class MetatubeJav(_PluginBase):
         ], {"enabled": False, "url": "", "token": "", "timeout": 10})
 
     def get_media_source(self):
-        return [{"name": self.plugin_name, "media_source": PLUGIN_MEDIA_SOURCE, "media_types": ["电影"]}]
+        try:
+            from app.schemas.types import MediaSource, MediaType
+            source = schemas.MediaSourceInfo(
+                name=self.plugin_name,
+                media_source=MediaSource(PLUGIN_MEDIA_SOURCE),
+                media_types=[MediaType.MOVIE],
+            )
+            return [source.model_dump()]
+        except (AttributeError, ImportError, TypeError, ValueError):
+            return [{"name": self.plugin_name, "media_source": PLUGIN_MEDIA_SOURCE, "media_types": ["电影"]}]
 
     def get_module(self):
         logger.debug("Metatube JAV 注册媒体模块，当前状态：%s", "启用" if self.get_state() else "禁用")
