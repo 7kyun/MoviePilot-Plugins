@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import logging
 import threading
+import time
 from pathlib import Path
 from typing import Any
 
@@ -53,7 +54,7 @@ if FileSystemEventHandler is not None:
 class MetatubeJav(_PluginBase):
     plugin_name = "Metatube JAV"
     plugin_desc = "使用局域网 Metatube 服务刮削 JAV 元数据并参与文件整理。"
-    plugin_version = "1.3.1"
+    plugin_version = "1.4.0"
     plugin_author = "7kyun"
     plugin_config_prefix = "metatubejav_"
     auth_level = 1
@@ -68,6 +69,8 @@ class MetatubeJav(_PluginBase):
         self._exclude_keywords = ""
         self._transfer_type = "move"
         self._interval = 10
+        self._request_interval = 2.0
+        self._overwrite_mode = "never"
         self._notify = False
 
     def init_plugin(self, config: dict = None):
@@ -79,6 +82,8 @@ class MetatubeJav(_PluginBase):
         self._notify = bool(config.get("notify", False))
         self._transfer_type = str(config.get("transfer_type") or "move")
         self._interval = max(1, int(config.get("interval") or 10))
+        self._request_interval = max(0.0, float(config.get("request_interval") or 2))
+        self._overwrite_mode = str(config.get("overwrite_mode") or "never")
         url = config.get("url") or os.getenv("METATUBE_URL", "http://metatube:8080")
         token = config.get("token") or os.getenv("METATUBE_TOKEN") or None
         self._client = MetatubeClient(
@@ -133,6 +138,7 @@ class MetatubeJav(_PluginBase):
             if path.is_file():
                 count += 1
                 self._handle_monitored_file(str(path), source_dir)
+                time.sleep(self._request_interval)
         logger.info("Metatube JAV 监控目录扫描完成：%s，共检查 %d 个文件", source_dir, count)
 
     def _handle_monitored_file(self, path: str, source_dir: str) -> None:
@@ -153,7 +159,10 @@ class MetatubeJav(_PluginBase):
         try:
             with self._api_lock:
                 meta = self._client.detail(code)
-            result = organize_file(file_path, target, meta, transfer_type=transfer_type, rename=str(rename).lower() != "false")
+            result = organize_file(file_path, target, meta, transfer_type=transfer_type, rename=str(rename).lower() != "false", overwrite=self._overwrite_mode)
+            if not result.moved:
+                logger.info("Metatube JAV 目标已存在，按覆盖模式跳过：%s", result.destination)
+                return
             logger.info("Metatube JAV 自动整理完成：%s -> %s（方式=%s，重命名=%s）", path, result.destination, transfer_type, rename)
         except MetatubeValidationError as exc:
             logger.warning("Metatube JAV 请求被拒绝（422），跳过文件：%s，原因：%s", path, exc)
@@ -193,9 +202,11 @@ class MetatubeJav(_PluginBase):
             {"component": "VTextField", "props": {"model": "url", "label": "Metatube URL"}},
             {"component": "VTextField", "props": {"model": "token", "label": "API Token", "type": "password"}},
             {"component": "VTextField", "props": {"model": "interval", "label": "兼容模式轮询间隔（秒）", "placeholder": "10"}},
+            {"component": "VTextField", "props": {"model": "request_interval", "label": "请求间隔（秒）", "placeholder": "2"}},
+            {"component": "VSelect", "props": {"model": "overwrite_mode", "label": "覆盖模式", "items": [{"title": "从不", "value": "never"}, {"title": "总是", "value": "always"}, {"title": "按文件大小", "value": "by_size"}, {"title": "仅保留最新", "value": "latest"}]}},
             {"component": "VTextarea", "props": {"model": "monitor_confs", "label": "监控目录", "rows": 5, "placeholder": "监控方式#监控目录#目标目录#是否重命名"}},
             {"component": "VTextarea", "props": {"model": "exclude_keywords", "label": "排除关键词", "rows": 2, "placeholder": "每行一个关键词"}},
-        ], {"enabled": False, "onlyonce": False, "notify": False, "url": "", "token": "", "timeout": 10, "transfer_type": "move", "interval": 10, "monitor_confs": "", "exclude_keywords": ""})
+        ], {"enabled": False, "onlyonce": False, "notify": False, "url": "", "token": "", "timeout": 10, "transfer_type": "move", "interval": 10, "request_interval": 2, "overwrite_mode": "never", "monitor_confs": "", "exclude_keywords": ""})
 
     def get_media_source(self):
         try:

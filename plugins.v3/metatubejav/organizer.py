@@ -33,13 +33,23 @@ class OrganizeResult:
     moved: bool
 
 
-def organize_file(source: str | Path, library_root: str | Path, meta: JavTitle, *, dry_run: bool = False, transfer_type: str = "move", rename: bool = True) -> OrganizeResult:
+def organize_file(source: str | Path, library_root: str | Path, meta: JavTitle, *, dry_run: bool = False, transfer_type: str = "move", rename: bool = True, overwrite: str = "never") -> OrganizeResult:
     src = Path(source)
     if not src.is_file():
         raise FileNotFoundError(src)
     root = Path(library_root)
     destination_dir = root / folder_name(meta)
     destination = destination_dir / (f"{file_stem(meta)}{src.suffix.lower()}" if rename else src.name)
+    if destination.exists() and destination.resolve() != src.resolve():
+        should_replace = overwrite == "always"
+        if overwrite == "by_size":
+            should_replace = src.stat().st_size > destination.stat().st_size
+        elif overwrite == "latest":
+            should_replace = src.stat().st_mtime > destination.stat().st_mtime
+        if not should_replace:
+            return OrganizeResult(src, destination, False)
+        if not dry_run:
+            destination.unlink()
     if destination.exists() and destination.resolve() != src.resolve():
         index = 2
         while True:
