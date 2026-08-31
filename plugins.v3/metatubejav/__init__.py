@@ -71,7 +71,7 @@ if FileSystemEventHandler is not None:
 class MetatubeJav(_PluginBase):
     plugin_name = "Metatube JAV"
     plugin_desc = "使用局域网 Metatube 服务刮削 JAV 元数据并参与文件整理。"
-    plugin_version = "1.9.2"
+    plugin_version = "1.9.3"
     plugin_author = "7kyun"
     plugin_config_prefix = "metatubejav_"
     auth_level = 1
@@ -560,10 +560,14 @@ class MetatubeJav(_PluginBase):
             base_keys = {"type", "title", "year", "title_year", "media_source", "media_id", "poster_path", "backdrop_path", "overview", "runtime", "vote_average", "release_date"}
             return model(**{key: value for key, value in fields.items() if key in base_keys})
 
-    @staticmethod
-    def _scrape_metadata_info(item):
+    def _scrape_metadata_info(self, item):
         """构造刮削链所需的领域媒体信息，保留 MediaType 枚举。"""
         fields = MetatubeJav._metadata_fields(item)
+        image_api_url = getattr(self._client, "image_api_url", None)
+        if callable(image_api_url) and item.id:
+            fields["poster_path"] = image_api_url("primary", item.id, item.provider)
+            if item.backdrop:
+                fields["backdrop_path"] = image_api_url("backdrop", item.id, item.provider)
         if DomainMediaInfo is None:
             return MetatubeJav._metadata_info(item)
         mediainfo = DomainMediaInfo()

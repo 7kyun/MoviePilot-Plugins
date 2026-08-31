@@ -1,8 +1,11 @@
+import importlib
 import threading
+from types import SimpleNamespace
 
 import pytest
 
 from app.plugins.metatubejav import MetatubeJav
+from app.plugins.metatubejav.client import MetatubeClient
 from app.plugins.metatubejav.normalizer import normalize_code
 
 
@@ -48,3 +51,50 @@ def test_stalled_detail_request_does_not_block_next_file() -> None:
     with pytest.raises(TimeoutError, match="仍在执行"):
         plugin._request_detail("SONE-113")
     release.set()
+
+
+def test_image_api_url_uses_metatube_proxy_and_escapes_identity() -> None:
+    """图片地址应指向 MetaTube 代理，并正确编码 provider 与番号。"""
+    client = MetatubeClient("http://metatube:8080/")
+
+    assert client.image_api_url("primary", "ABC/123", "Jav Bus") == (
+        "http://metatube:8080/v1/images/primary/Jav%20Bus/ABC%2F123"
+    )
+
+
+def test_scrape_metadata_uses_metatube_image_proxy(monkeypatch) -> None:
+    """刮削链的图片字段应使用 MetaTube 代理而不是来源站直链。"""
+    module = importlib.import_module("app.plugins.metatubejav")
+
+    class FakeDomainMediaInfo:
+        def from_dict(self, fields):
+            self.fields = fields
+
+    monkeypatch.setattr(module, "DomainMediaInfo", FakeDomainMediaInfo)
+    monkeypatch.setattr(module, "MediaSource", lambda value: value)
+    monkeypatch.setattr(module, "MediaType", SimpleNamespace(MOVIE=SimpleNamespace(value="movie")))
+
+    plugin = object.__new__(MetatubeJav)
+    plugin._client = MetatubeClient("http://metatube:8080")
+    item = SimpleNamespace(
+        id="SSNI-999",
+        provider="JavBus",
+        title="Example",
+        year=2024,
+        original_title=None,
+        poster="https://www.javbus.com/pics/cover/ssni-999_b.jpg",
+        backdrop="https://www.javbus.com/pics/cover/ssni-999_t.jpg",
+        overview=None,
+        runtime=None,
+        rating=None,
+        release_date=None,
+        actors=(),
+        tags=(),
+        studio=None,
+        homepage=None,
+    )
+
+    result = plugin._scrape_metadata_info(item)
+
+    assert result.fields["poster_path"] == "http://metatube:8080/v1/images/primary/JavBus/SSNI-999"
+    assert result.fields["backdrop_path"] == "http://metatube:8080/v1/images/backdrop/JavBus/SSNI-999"

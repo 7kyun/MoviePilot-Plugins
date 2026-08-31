@@ -82,6 +82,15 @@ class MetatubeClient:
             raise MetatubeProtocolError("Metatube detail response is not an object")
         return title(payload)
 
+    def image_api_url(self, image_type: str, ident: str, provider: str | None = None) -> str:
+        """构造 MetaTube 图片代理地址，避免刮削器直连来源站图片。"""
+        if image_type not in {"primary", "thumb", "backdrop"}:
+            raise ValueError(f"unsupported MetaTube image type: {image_type}")
+        provider = provider or "JavBus"
+        encoded_provider = urllib.parse.quote(str(provider), safe="")
+        encoded_ident = urllib.parse.quote(str(ident), safe="")
+        return f"{self.base_url}/v1/images/{image_type}/{encoded_provider}/{encoded_ident}"
+
     def close(self) -> None:
         """释放客户端资源；当前 urllib 实现无需额外操作。"""
         return None

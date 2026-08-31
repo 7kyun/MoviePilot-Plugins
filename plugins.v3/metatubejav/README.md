@@ -51,9 +51,13 @@ METATUBE_TIMEOUT=10
 ```text
 GET /v1/movies/search?q=<keyword>&fallback=true
 GET /v1/movies/<provider>/<id>?lazy=true
+GET /v1/images/primary/<provider>/<id>
+GET /v1/images/thumb/<provider>/<id>
+GET /v1/images/backdrop/<provider>/<id>
 ```
 
 例如详情身份为 `JavBus:SSNI-999` 时，provider 是 `JavBus`，id 是 `SSNI-999`。
+刮削图片使用 MetaTube 图片代理接口，不直接请求详情返回的 JavBus 原图 URL。
 
 ## 开发验证
 
