@@ -24,14 +24,21 @@ except ImportError:
 
 try:
     from app import schemas
+    from app.domain.context import MediaInfo as DomainMediaInfo
+    from app.domain.scraper import MediaScraperHelper
     from app.chain.scraping import ScrapingChain
     from app.plugins import _PluginBase
-    from app.schemas import MediaType
+    from app.schemas.types import MediaSource, MediaType
+    from app.sdk.utilities import SystemUtils
     from app.sdk.logging import logger
 except Exception:
     schemas = None
+    DomainMediaInfo = None
+    MediaScraperHelper = None
     ScrapingChain = None
+    MediaSource = None
     MediaType = None
+    SystemUtils = None
     logger = logging.getLogger(__name__)
     class _PluginBase:
         def __init__(self, *args, **kwargs): pass
@@ -64,7 +71,7 @@ if FileSystemEventHandler is not None:
 class MetatubeJav(_PluginBase):
     plugin_name = "Metatube JAV"
     plugin_desc = "使用局域网 Metatube 服务刮削 JAV 元数据并参与文件整理。"
-    plugin_version = "1.9.1"
+    plugin_version = "1.9.2"
     plugin_author = "7kyun"
     plugin_config_prefix = "metatubejav_"
     auth_level = 1
@@ -240,6 +247,7 @@ class MetatubeJav(_PluginBase):
             excluded = [Path(value.strip()) for value in self._scrape_exclude.splitlines() if value.strip()]
             if not paths:
                 return
+            video_extensions = [extension.lstrip(".") for extension in VIDEO_EXTENSIONS]
             scanned = 0
             scraped = 0
             seen: set[tuple[Path, str]] = set()
@@ -250,18 +258,25 @@ class MetatubeJav(_PluginBase):
                 if not root.is_dir():
                     logger.warning("Metatube JAV 刮削监控目录不存在：%s", root)
                     continue
-                for file_path in sorted(root.rglob("*"), key=lambda value: str(value).lower()):
+                files = self._list_video_files(root, video_extensions)
+                logger.info("Metatube JAV 目录递归发现 %d 个视频文件：%s", len(files), root)
+                parent_counts: dict[Path, int] = {}
+                for file_path in files:
+                    parent_counts[file_path.parent] = parent_counts.get(file_path.parent, 0) + 1
+                for file_path in files:
                     if self._scrape_event.is_set():
                         break
-                    if not file_path.is_file() or file_path.suffix.lower() not in VIDEO_EXTENSIONS:
-                        continue
                     if any(exclude == file_path or exclude in file_path.parents for exclude in excluded):
                         continue
                     code = normalize_code(file_path.stem)
                     if not code:
                         continue
                     scanned += 1
-                    target = file_path.parent if file_path.parent != root else file_path
+                    target = (
+                        file_path.parent
+                        if file_path.parent != root and parent_counts.get(file_path.parent) == 1
+                        else file_path
+                    )
                     key = (target, code)
                     if key in seen:
                         continue
@@ -278,7 +293,21 @@ class MetatubeJav(_PluginBase):
                         logger.exception("Metatube JAV 刮削失败：%s", file_path)
                     if self._request_interval:
                         time.sleep(self._request_interval)
-            logger.info("Metatube JAV 刮削完成：扫描 %d 个 JAV 视频，完成 %d 项", scanned, scraped)
+            logger.info("Metatube JAV 刮削完成：识别 %d 个 JAV 视频，完成 %d 项", scanned, scraped)
+
+    @staticmethod
+    def _list_video_files(root: Path, extensions: list[str]) -> list[Path]:
+        """递归列出视频文件，并补回 SystemUtils 忽略的软链接文件。"""
+        if SystemUtils is not None:
+            files = list(SystemUtils.list_files(root, extensions, recursive=True))
+        else:
+            files = []
+        known = {str(path) for path in files}
+        for path in root.rglob("*"):
+            if path.is_file() and path.suffix.lower() in VIDEO_EXTENSIONS and str(path) not in known:
+                files.append(path)
+                known.add(str(path))
+        return sorted(files, key=lambda value: str(value).lower())
 
     def _scrape_path(self, path: Path, meta: Any) -> bool:
         """下载海报资源并将 Metatube 元数据刮削到视频或其媒体目录。"""
@@ -288,7 +317,7 @@ class MetatubeJav(_PluginBase):
         try:
             target = Path(path)
             target_type = "dir" if target.is_dir() else "file"
-            mediainfo = self._metadata_info(meta)
+            mediainfo = self._scrape_metadata_info(meta)
             obtain_images = getattr(self.chain, "obtain_images", None)
             if callable(obtain_images):
                 obtain_images(mediainfo)
@@ -492,7 +521,10 @@ class MetatubeJav(_PluginBase):
 
     def get_module(self):
         """返回需要重载的宿主模块映射。"""
-        return {}
+        return {
+            "metadata_nfo": self.metadata_nfo,
+            "metadata_img": self.metadata_img,
+        }
 
     @staticmethod
     def _source_matches(media_source: Any) -> bool:
@@ -505,11 +537,16 @@ class MetatubeJav(_PluginBase):
         return self._metadata_info(item)
 
     @staticmethod
-    def _metadata_info(item):
-        """将 Metatube 详情转换为 MoviePilot 可刮削的媒体信息。"""
+    def _metadata_fields(item):
         year = str(item.year) if item.year is not None else None
-        fields = {"type": MediaType.MOVIE if MediaType is not None else "电影", "title": item.title, "year": year, "title_year": f"{item.title} ({year})" if year else item.title, "media_source": PLUGIN_MEDIA_SOURCE, "media_id": f"{item.provider}:{item.id}" if item.provider else item.id, "poster_path": item.poster, "backdrop_path": item.backdrop, "overview": item.overview, "runtime": item.runtime, "vote_average": item.rating, "release_date": item.release_date}
+        fields = {"type": MediaType.MOVIE.value if MediaType is not None else "电影", "title": item.title, "year": year, "title_year": f"{item.title} ({year})" if year else item.title, "media_source": PLUGIN_MEDIA_SOURCE, "media_id": f"{item.provider}:{item.id}" if item.provider else item.id, "poster_path": item.poster, "backdrop_path": item.backdrop, "overview": item.overview, "runtime": item.runtime, "vote_average": item.rating, "release_date": item.release_date}
         fields.update({"original_title": item.original_title, "actors": list(item.actors), "tags": list(item.tags), "studio": item.studio, "homepage": item.homepage})
+        return fields
+
+    @staticmethod
+    def _metadata_info(item):
+        """将 Metatube 详情转换为 MoviePilot API 媒体信息。"""
+        fields = MetatubeJav._metadata_fields(item)
         if schemas is None or not hasattr(schemas, "MediaInfo"):
             return fields
         model = schemas.MediaInfo
@@ -522,6 +559,38 @@ class MetatubeJav(_PluginBase):
             # 不同宿主版本的演员/标签类型可能不同，基础字段仍可完成 NFO 与图片刮削。
             base_keys = {"type", "title", "year", "title_year", "media_source", "media_id", "poster_path", "backdrop_path", "overview", "runtime", "vote_average", "release_date"}
             return model(**{key: value for key, value in fields.items() if key in base_keys})
+
+    @staticmethod
+    def _scrape_metadata_info(item):
+        """构造刮削链所需的领域媒体信息，保留 MediaType 枚举。"""
+        fields = MetatubeJav._metadata_fields(item)
+        if DomainMediaInfo is None:
+            return MetatubeJav._metadata_info(item)
+        mediainfo = DomainMediaInfo()
+        mediainfo.from_dict(fields)
+        if MediaSource is not None:
+            mediainfo.media_source = MediaSource(PLUGIN_MEDIA_SOURCE)
+        if MediaType is not None:
+            mediainfo.type = MediaType.MOVIE
+        return mediainfo
+
+    @staticmethod
+    def metadata_nfo(meta=None, mediainfo=None, season=None, episode=None, **kwargs):
+        """为 Metatube 来源生成通用电影 NFO。"""
+        if not mediainfo or not MetatubeJav._source_matches(getattr(mediainfo, "media_source", None)):
+            return None
+        if MediaScraperHelper is None:
+            return None
+        return MediaScraperHelper.get_metadata_nfo(mediainfo, season=season, episode=episode)
+
+    @staticmethod
+    def metadata_img(mediainfo=None, season=None, episode=None, **kwargs):
+        """返回 Metatube 海报和背景图下载地址。"""
+        if not mediainfo or not MetatubeJav._source_matches(getattr(mediainfo, "media_source", None)):
+            return None
+        if MediaScraperHelper is None:
+            return None
+        return MediaScraperHelper.get_metadata_img(mediainfo, season=season, episode=episode)
 
     def search_medias(self, meta: Any, media_source: Any = None, **_: Any):
         """按 JAV 番号搜索 Metatube 媒体。"""
