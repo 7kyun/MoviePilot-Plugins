@@ -7,23 +7,42 @@ from .models import JavSearchItem, JavTitle, as_mapping, first, string_list
 
 NUMBER_RE = re.compile(r"(?i)([a-z\d]+(?:[-_][a-z\d]{2,})+)")
 ALNUM_RE = re.compile(r"(?i)((?:[a-z]+\d|\d+[a-z])[a-z\d]+)")
+DOMAIN_RE = re.compile(r"(?i)[a-z\d]+\.(?:com|net|top|xyz|tv|me)(?:[^a-z\d]|$)")
+TAG_RE = re.compile(
+    r"(?i)[-_.](dvd|iso|mkv|mp4|c?avi|\d*fps|whole|(f|hhb)?hd\d*|sd\d*|"
+    r"(?:360|480|720|1080|2160)[pi]|x1080x|uncensored|leak|[2468]ks?|[xh]26[45])+"
+)
+MAKER_RE = re.compile(
+    r"(?i)(^|[-_\s]+)(carib(b?ean)?(com)?(pr)?|1?pond?o?|10mu(sume)?|"
+    r"paco(paco)?(mama)?|mura(mura)?|tokyo[-_\s]?hot)"
+    r"([-_\s]+(?P<pattern>\d{4,}[-_]\d{2,}|[a-z]{1,4}\d{2,4})|$)"
+)
+SUFFIX_RE = re.compile(r"(?i)([-_](c|uc|ch|cd\d{1,2})|hhb\d*|ch|[a-d])\s*$")
 
 
 def normalize_code(value: Any) -> str | None:
+    """按 MetaTube SDK 规则从文件名或标题提取并规范化 JAV 番号。"""
     if not value:
         return None
     text = str(value).strip()
-    text = re.sub(r"(?i)([a-z\d]+\.(?:com|net|top|xyz|tv))(?:[^a-z\d]|$)", "", text)
+    # Mirror metatube-sdk-go/common/number.Trim before extracting the token.
+    if "." in text:
+        stem, extension = text.rsplit(".", 1)
+        if 0 < len(extension) < 6:
+            text = stem
+    text = DOMAIN_RE.sub("", text)
     text = re.sub(r"(?i)^(?:f?hd|sd)[-_](.*$)", r"\1", text)
     match = NUMBER_RE.search(text) or ALNUM_RE.search(text)
     if not match:
         return None
     code = match.group(1)
-    code = re.sub(r"(?i)[-_.](dvd|iso|mkv|mp4|c?avi|\d*fps|whole|(f|hhb)?hd\d*|sd\d*|(?:360|480|720|1080|2160)[pi]|x1080x|uncensored|leak|[2468]ks?|[xh]26[45])+", "", code)
-    code = re.sub(r"(?i)([-_](c|uc|ch|cd\d{1,2})|hhb\d*|ch|[a-d])\s*$", "", code)
+    code = TAG_RE.sub("", code)
+    code = MAKER_RE.sub(r"\g<pattern>", code)
     code = re.sub(r"(?i)^fc2[-_]?ppv[-_]", "FC2-", code)
     code = re.sub(r"(?i)^fc2[_-]?ppv[-_]?(\d+)$", r"FC2-\1", code)
-    code = re.sub(r"[ _]+", "-", code).strip("-_. ")
+    while SUFFIX_RE.search(code):
+        code = SUFFIX_RE.sub("", code)
+    code = re.sub(r"\s+", "-", code).strip("-_. ")
     return code.upper() if code else None
 
 
