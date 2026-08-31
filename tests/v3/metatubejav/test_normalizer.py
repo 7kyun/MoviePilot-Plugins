@@ -98,3 +98,15 @@ def test_scrape_metadata_uses_metatube_image_proxy(monkeypatch) -> None:
 
     assert result.fields["poster_path"] == "http://metatube:8080/v1/images/primary/JavBus/SSNI-999"
     assert result.fields["backdrop_path"] == "http://metatube:8080/v1/images/backdrop/JavBus/SSNI-999"
+
+
+def test_metadata_nfo_decodes_helper_bytes(monkeypatch) -> None:
+    """NFO provider 应将宿主 helper 的 bytes 返回值转换为字符串。"""
+    module = importlib.import_module("app.plugins.metatubejav")
+    monkeypatch.setattr(module, "MediaScraperHelper", SimpleNamespace(get_metadata_nfo=lambda *_args, **_kwargs: b"<movie/>"))
+    monkeypatch.setattr(MetatubeJav, "_source_matches", staticmethod(lambda _source: True))
+
+    result = MetatubeJav.metadata_nfo(mediainfo=SimpleNamespace(media_source="metatube-jav"))
+
+    assert result == "<movie/>"
+    assert isinstance(result, str)

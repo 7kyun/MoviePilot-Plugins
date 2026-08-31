@@ -71,7 +71,7 @@ if FileSystemEventHandler is not None:
 class MetatubeJav(_PluginBase):
     plugin_name = "Metatube JAV"
     plugin_desc = "使用局域网 Metatube 服务刮削 JAV 元数据并参与文件整理。"
-    plugin_version = "1.9.3"
+    plugin_version = "1.9.4"
     plugin_author = "7kyun"
     plugin_config_prefix = "metatubejav_"
     auth_level = 1
@@ -585,7 +585,8 @@ class MetatubeJav(_PluginBase):
             return None
         if MediaScraperHelper is None:
             return None
-        return MediaScraperHelper.get_metadata_nfo(mediainfo, season=season, episode=episode)
+        nfo = MediaScraperHelper.get_metadata_nfo(mediainfo, season=season, episode=episode)
+        return nfo.decode("utf-8") if isinstance(nfo, bytes) else nfo
 
     @staticmethod
     def metadata_img(mediainfo=None, season=None, episode=None, **kwargs):
