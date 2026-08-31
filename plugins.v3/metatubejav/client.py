@@ -68,16 +68,20 @@ class MetatubeClient:
         raise MetatubeProtocolError("Metatube search response has no result list")
 
     def search(self, query: str) -> list[JavSearchItem]:
-        return [search_item(item) for item in self._items(self._request(self.search_path, {"q": query}))]
+        return [search_item(item) for item in self._items(self._request(self.search_path, {"q": query, "fallback": "true"}))]
 
     def detail(self, ident: str, provider: str | None = None) -> JavTitle:
         if provider is None and ":" in ident:
             provider, ident = ident.split(":", 1)
         provider = provider or "JavBus"
         path = self.detail_path.replace("{provider}", urllib.parse.quote(provider, safe="")).replace("{id}", urllib.parse.quote(ident, safe=""))
-        payload = self._request(path)
+        payload = self._request(path, {"lazy": "true"})
         if isinstance(payload, dict) and isinstance(payload.get("data"), dict):
             payload = payload["data"]
         if not isinstance(payload, dict):
             raise MetatubeProtocolError("Metatube detail response is not an object")
         return title(payload)
+
+    def close(self) -> None:
+        """释放客户端资源；当前 urllib 实现无需额外操作。"""
+        return None

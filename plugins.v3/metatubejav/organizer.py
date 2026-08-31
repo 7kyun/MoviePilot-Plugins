@@ -80,9 +80,7 @@ def organize_file(source: str | Path, library_root: str | Path, meta: JavTitle, 
                 break
             index += 1
     if not dry_run:
-        logger.info("Metatube JAV 整理准备创建目标目录：%s", destination_dir)
         destination_dir.mkdir(parents=True, exist_ok=True)
-        logger.info("Metatube JAV 整理开始文件转移：方式=%s，源=%s，目标=%s", transfer_type, src, destination)
         if SystemUtils is None:
             raise RuntimeError("MoviePilot SystemUtils 不可用，无法执行文件整理")
         if transfer_type == "link":
@@ -93,12 +91,6 @@ def organize_file(source: str | Path, library_root: str | Path, meta: JavTitle, 
             retcode, retmsg = SystemUtils.move(src, destination)
         else:
             retcode, retmsg = SystemUtils.copy(src, destination)
-        logger.info(
-            "Metatube JAV 整理文件转移返回：代码=%s，消息=%s，目标=%s",
-            retcode,
-            retmsg or "成功",
-            destination,
-        )
         if retcode != 0:
             raise OSError(f"MoviePilot 文件转移失败（{transfer_type}）：{retmsg or retcode}")
     return OrganizeResult(src, destination, not dry_run)
