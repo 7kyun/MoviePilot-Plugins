@@ -26,10 +26,12 @@ try:
     from app import schemas
     from app.chain.scraping import ScrapingChain
     from app.plugins import _PluginBase
+    from app.schemas import MediaType
     from app.sdk.logging import logger
 except Exception:
     schemas = None
     ScrapingChain = None
+    MediaType = None
     logger = logging.getLogger(__name__)
     class _PluginBase:
         def __init__(self, *args, **kwargs): pass
@@ -62,7 +64,7 @@ if FileSystemEventHandler is not None:
 class MetatubeJav(_PluginBase):
     plugin_name = "Metatube JAV"
     plugin_desc = "使用局域网 Metatube 服务刮削 JAV 元数据并参与文件整理。"
-    plugin_version = "1.9.0"
+    plugin_version = "1.9.1"
     plugin_author = "7kyun"
     plugin_config_prefix = "metatubejav_"
     auth_level = 1
@@ -293,7 +295,7 @@ class MetatubeJav(_PluginBase):
             item_path = str(target).replace("\\", "/")
             if target_type == "dir":
                 item_path = f"{item_path}/"
-            ScrapingChain().scrape_metadata(
+            scrape_result = ScrapingChain().scrape_metadata(
                 fileitem=schemas.FileItem(
                     storage="local",
                     type=target_type,
@@ -306,6 +308,11 @@ class MetatubeJav(_PluginBase):
                 mediainfo=mediainfo,
                 overwrite=self._scrape_overwrite,
             )
+            if isinstance(scrape_result, tuple):
+                success, message = scrape_result
+                if not success:
+                    logger.warning("Metatube JAV 刮削未生成产物：%s，原因：%s", target, message)
+                    return False
             logger.info("Metatube JAV 刮削完成：%s", target)
             return True
         except Exception:
@@ -501,7 +508,7 @@ class MetatubeJav(_PluginBase):
     def _metadata_info(item):
         """将 Metatube 详情转换为 MoviePilot 可刮削的媒体信息。"""
         year = str(item.year) if item.year is not None else None
-        fields = {"type": "电影", "title": item.title, "year": year, "title_year": f"{item.title} ({year})" if year else item.title, "media_source": PLUGIN_MEDIA_SOURCE, "media_id": f"{item.provider}:{item.id}" if item.provider else item.id, "poster_path": item.poster, "backdrop_path": item.backdrop, "overview": item.overview, "runtime": item.runtime, "vote_average": item.rating, "release_date": item.release_date}
+        fields = {"type": MediaType.MOVIE if MediaType is not None else "电影", "title": item.title, "year": year, "title_year": f"{item.title} ({year})" if year else item.title, "media_source": PLUGIN_MEDIA_SOURCE, "media_id": f"{item.provider}:{item.id}" if item.provider else item.id, "poster_path": item.poster, "backdrop_path": item.backdrop, "overview": item.overview, "runtime": item.runtime, "vote_average": item.rating, "release_date": item.release_date}
         fields.update({"original_title": item.original_title, "actors": list(item.actors), "tags": list(item.tags), "studio": item.studio, "homepage": item.homepage})
         if schemas is None or not hasattr(schemas, "MediaInfo"):
             return fields
