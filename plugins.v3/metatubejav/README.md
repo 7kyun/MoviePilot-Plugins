@@ -1,6 +1,6 @@
 # Metatube JAV 元数据
 
-MoviePilot V3 插件，通过自身目录监控调用局域网 Metatube，为 JAV 资源执行识别、刮削和文件整理。
+MoviePilot V3 插件，通过自身目录监控调用 Metatube，为 JAV 资源执行识别、刮削和文件整理。
 
 ## 功能
 
