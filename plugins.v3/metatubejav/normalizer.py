@@ -8,6 +8,10 @@ from .models import JavSearchItem, JavTitle, as_mapping, first, string_list
 NUMBER_RE = re.compile(r"(?i)([a-z\d]+(?:[-_][a-z\d]{2,})+)")
 ALNUM_RE = re.compile(r"(?i)((?:[a-z]+\d|\d+[a-z])[a-z\d]+)")
 DOMAIN_RE = re.compile(r"(?i)[a-z\d]+\.(?:com|net|top|xyz|tv|me)(?:[^a-z\d]|$)")
+TRAILING_DOMAIN_RE = re.compile(
+    r"(?i)(?P<prefix>^|[@\[\]_\-\s])(?=[a-z\d]*[a-z])"
+    r"[a-z\d]+\.(?:com|net|top|xyz|tv|me)$"
+)
 TAG_RE = re.compile(
     r"(?i)[-_.](dvd|iso|mkv|mp4|c?avi|\d*fps|whole|(f|hhb)?hd\d*|sd\d*|"
     r"(?:360|480|720|1080|2160)[pi]|x1080x|uncensored|leak|[2468]ks?|[xh]26[45])+"
@@ -26,10 +30,12 @@ def normalize_code(value: Any) -> str | None:
         return None
     text = str(value).strip()
     # Mirror metatube-sdk-go/common/number.Trim before extracting the token.
+    text = TRAILING_DOMAIN_RE.sub(r"\g<prefix>", text)
     if "." in text:
         stem, extension = text.rsplit(".", 1)
         if 0 < len(extension) < 6:
             text = stem
+    text = TRAILING_DOMAIN_RE.sub(r"\g<prefix>", text)
     text = DOMAIN_RE.sub("", text)
     text = re.sub(r"(?i)^(?:f?hd|sd)[-_](.*$)", r"\1", text)
     match = NUMBER_RE.search(text) or ALNUM_RE.search(text)

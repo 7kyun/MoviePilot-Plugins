@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import logging
+import queue
 import threading
 import time
 from pathlib import Path
@@ -54,7 +55,7 @@ if FileSystemEventHandler is not None:
 class MetatubeJav(_PluginBase):
     plugin_name = "Metatube JAV"
     plugin_desc = "使用局域网 Metatube 服务刮削 JAV 元数据并参与文件整理。"
-    plugin_version = "1.8.5"
+    plugin_version = "1.8.6"
     plugin_author = "7kyun"
     plugin_config_prefix = "metatubejav_"
     auth_level = 1
@@ -71,11 +72,13 @@ class MetatubeJav(_PluginBase):
         self._transfer_type = "move"
         self._interval = 10
         self._request_interval = 2.0
+        self._request_timeout = 10.0
         self._overwrite_mode = "never"
         self._notify = False
 
     def init_plugin(self, config: dict = None):
         self.stop_service()
+        self._api_lock = threading.Semaphore(1)
         config = config or {}
         self._enabled = bool(config.get("enabled", True))
         onlyonce = bool(config.get("onlyonce", False))
@@ -84,6 +87,7 @@ class MetatubeJav(_PluginBase):
         self._transfer_type = str(config.get("transfer_type") or "move")
         self._interval = max(1, int(config.get("interval") or 10))
         self._request_interval = max(0.0, float(config.get("request_interval") or 2))
+        self._request_timeout = max(1.0, float(config.get("timeout") or 10))
         self._overwrite_mode = str(config.get("overwrite_mode") or "never")
         url = config.get("url") or os.getenv("METATUBE_URL", "http://metatube:8080")
         token = config.get("token") or os.getenv("METATUBE_TOKEN") or None
@@ -209,14 +213,8 @@ class MetatubeJav(_PluginBase):
             return
         try:
             logger.info("Metatube JAV 等待详情请求锁：%s", code)
-            if not self._api_lock.acquire(timeout=60):
-                logger.error("Metatube JAV 等待详情请求锁超时，跳过：%s", code)
-                return
-            try:
-                logger.info("Metatube JAV 开始请求详情：%s", code)
-                meta = self._client.detail(code)
-            finally:
-                self._api_lock.release()
+            logger.info("Metatube JAV 开始请求详情：%s", code)
+            meta = self._request_detail(code)
             logger.info("Metatube JAV 详情请求完成：%s，标题=%s", code, meta.title)
             logger.info("Metatube JAV 开始整理文件：%s", file_path)
             result = organize_file(file_path, target, meta, transfer_type=transfer_type, rename=str(rename).lower() != "false", overwrite=overwrite)
@@ -232,8 +230,37 @@ class MetatubeJav(_PluginBase):
             return str(result.destination)
         except MetatubeValidationError as exc:
             logger.warning("Metatube JAV 请求被拒绝（422），跳过文件：%s，原因：%s", path, exc)
+        except TimeoutError as exc:
+            logger.warning("Metatube JAV 详情请求超时或已有请求卡住，跳过文件：%s，原因：%s", path, exc)
         except Exception:
             logger.exception("Metatube JAV 自动整理失败：%s", path)
+
+    def _request_detail(self, code: str, provider: str | None = None):
+        """在截止时间内请求详情，避免单个卡死请求阻塞后续文件。"""
+        api_lock = self._api_lock
+        if not api_lock.acquire(blocking=False):
+            raise TimeoutError("已有 Metatube 详情请求仍在执行")
+        client = self._client
+        result = queue.Queue(maxsize=1)
+
+        def request() -> None:
+            try:
+                result.put((client.detail(code, provider), None))
+            except Exception as exc:
+                result.put((None, exc))
+            finally:
+                api_lock.release()
+
+        # urllib 无法强制取消已进入 read() 的线程，守护线程配合锁占用让后续文件快速跳过。
+        worker = threading.Thread(target=request, name="metatubejav-detail", daemon=True)
+        worker.start()
+        worker.join(timeout=self._request_timeout)
+        if worker.is_alive():
+            raise TimeoutError(f"详情请求超过 {self._request_timeout:g} 秒")
+        meta, error = result.get_nowait()
+        if error is not None:
+            raise error
+        return meta
 
     @staticmethod
     def _cleanup_empty_dirs(directory: Path, root: str) -> None:
@@ -328,8 +355,14 @@ class MetatubeJav(_PluginBase):
             return []
         logger.info("Metatube JAV 开始搜索：%s", code)
         try:
-            with self._api_lock:
+            api_lock = self._api_lock
+            if not api_lock.acquire(timeout=self._request_timeout):
+                logger.warning("Metatube JAV 搜索请求锁超时，跳过：%s", code)
+                return []
+            try:
                 results = self._client.search(code)
+            finally:
+                api_lock.release()
             logger.info("Metatube JAV 搜索完成：%s，结果数：%d", code, len(results))
             return [self._media_info(parse_title({"id": r.id, "number": r.code, "title": r.title, "provider": r.provider, "homepage": r.homepage, "thumb_url": r.poster, "release_date": r.release_date})) for r in results]
         except MetatubeValidationError as exc:
@@ -350,6 +383,6 @@ class MetatubeJav(_PluginBase):
     def organize(self, source: str, library_root: str, media_id: str, provider: str | None = None, *, dry_run: bool = False):
         if not self.get_state(): raise RuntimeError("Metatube JAV plugin is disabled")
         logger.info("Metatube JAV 开始整理：%s", source)
-        result = organize_file(source, library_root, self._client.detail(media_id, provider), dry_run=dry_run)
+        result = organize_file(source, library_root, self._request_detail(media_id, provider), dry_run=dry_run)
         logger.info("Metatube JAV 整理%s：%s -> %s", "预览" if dry_run else "完成", result.source, result.destination)
         return {"source": str(result.source), "destination": str(result.destination), "moved": result.moved}
